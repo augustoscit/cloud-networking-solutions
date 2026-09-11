@@ -112,8 +112,10 @@ resource "google_network_services_gateway" "swp" {
   ports        = [80, 443]
 
   gateway_security_policy = google_network_security_gateway_security_policy.swp.id
-  network                 = var.network_self_link
-  subnetwork              = google_compute_subnetwork.swp_proxy.self_link
+  # google_network_services_gateway requires both network and subnetwork in the
+  # short "projects/P/..." form, NOT the https:// self_link URL.
+  network    = local.network_id
+  subnetwork = google_compute_subnetwork.swp_proxy.id
 
   # SWP auto-creates a Cloud Router for its own proxy-originated egress.
   # This flag ensures that hidden router is removed when the gateway is
