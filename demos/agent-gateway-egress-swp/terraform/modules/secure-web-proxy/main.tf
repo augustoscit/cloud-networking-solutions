@@ -40,13 +40,19 @@
  *
  * Reference: https://cloud.google.com/secure-web-proxy/docs/deploy-next-hop
  *
+ * Subnet roles:
+ *   - REGIONAL_MANAGED_PROXY subnet (google_compute_subnetwork.swp_proxy): required
+ *     as a regional prerequisite for SWP to work; provides unique IPs for the proxy
+ *     infrastructure. NOT referenced in google_network_services_gateway.subnetwork.
+ *   - var.private_subnet_id (the primary PRIVATE subnet): referenced in
+ *     google_network_services_gateway.subnetwork — this is where the gateway's
+ *     internal next-hop IP is allocated. Must have Purpose = PRIVATE.
+ *
  * API format notes:
  *   - google_network_services_gateway requires network and subnetwork in the
- *     same URL format. We use self_link (full https://... URL) for both.
- *   - google_network_connectivity_policy_based_route requires network in the
- *     short "projects/P/global/networks/N" form, NOT the https:// URL.
- *     local.network_id strips the https://www.googleapis.com/compute/v1/ prefix
- *     from var.network_self_link to produce the required format.
+ *     short "projects/P/..." form, NOT the https:// self_link URL.
+ *   - google_network_connectivity_policy_based_route also requires the short form.
+ *     local.network_id strips the googleapis.com prefix from var.network_self_link.
  */
 
 locals {
@@ -56,11 +62,12 @@ locals {
   network_id = replace(var.network_self_link, "https://www.googleapis.com/compute/v1/", "")
 }
 
-# Dedicated proxy-only subnet for the SWP gateway.
-# purpose = REGIONAL_MANAGED_PROXY + role = ACTIVE is required by SWP in
-# next-hop mode. A region can only have one ACTIVE REGIONAL_MANAGED_PROXY
-# subnet per VPC — the networking module intentionally omits this subnet so
-# ownership is unambiguous.
+# Proxy-only subnet — regional prerequisite for SWP.
+# purpose = REGIONAL_MANAGED_PROXY + role = ACTIVE must exist in the region
+# for SWP to work. It provides unique IPs for the proxy infrastructure internally
+# but is NOT the subnet referenced in google_network_services_gateway.subnetwork
+# (that must be a PRIVATE subnet). Only one ACTIVE REGIONAL_MANAGED_PROXY subnet
+# per VPC per region is allowed — the networking module omits this to avoid conflict.
 resource "google_compute_subnetwork" "swp_proxy" {
   project       = var.project_id
   name          = "${var.name_prefix}-swp-proxy-subnet"
@@ -112,10 +119,11 @@ resource "google_network_services_gateway" "swp" {
   ports        = [80, 443]
 
   gateway_security_policy = google_network_security_gateway_security_policy.swp.id
-  # google_network_services_gateway requires both network and subnetwork in the
-  # short "projects/P/..." form, NOT the https:// self_link URL.
+  # Both network and subnetwork must use the short "projects/P/..." form.
+  # subnetwork must be a PRIVATE-purpose subnet — the REGIONAL_MANAGED_PROXY
+  # subnet above is a regional prerequisite but cannot be used here.
   network    = local.network_id
-  subnetwork = google_compute_subnetwork.swp_proxy.id
+  subnetwork = var.private_subnet_id
 
   # SWP auto-creates a Cloud Router for its own proxy-originated egress.
   # This flag ensures that hidden router is removed when the gateway is

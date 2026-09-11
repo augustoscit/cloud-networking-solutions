@@ -78,6 +78,11 @@ module "secure_web_proxy" {
   name_prefix       = var.name_prefix
   network_self_link = module.networking.network_self_link
 
+  # The SWP gateway allocates its internal next-hop IP from the primary (PRIVATE)
+  # subnet. The REGIONAL_MANAGED_PROXY subnet is a separate regional prerequisite
+  # managed inside the secure-web-proxy module itself.
+  private_subnet_id = module.networking.subnet_id
+
   swp_proxy_subnet_cidr     = var.swp_proxy_subnet_cidr
   agent_gateway_subnet_cidr = var.agent_gateway_subnet_cidr
 

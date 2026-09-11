@@ -44,3 +44,8 @@ variable "agent_gateway_subnet_cidr" {
   description = "CIDR of the Agent Gateway PSC-I subnet. Traffic sourcing from this range is force-steered through the SWP via a policy-based route."
   type        = string
 }
+
+variable "private_subnet_id" {
+  description = "ID (projects/P/regions/R/subnetworks/N) of a PRIVATE-purpose subnet from which the SWP gateway allocates its internal next-hop IP. Must be in the same VPC and region as the gateway. The REGIONAL_MANAGED_PROXY subnet is a separate regional prerequisite and must NOT be used here."
+  type        = string
+}
