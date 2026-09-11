@@ -39,7 +39,22 @@
  * cleaned up when this gateway is destroyed.
  *
  * Reference: https://cloud.google.com/secure-web-proxy/docs/deploy-next-hop
+ *
+ * API format notes:
+ *   - google_network_services_gateway requires network and subnetwork in the
+ *     same URL format. We use self_link (full https://... URL) for both.
+ *   - google_network_connectivity_policy_based_route requires network in the
+ *     short "projects/P/global/networks/N" form, NOT the https:// URL.
+ *     local.network_id strips the https://www.googleapis.com/compute/v1/ prefix
+ *     from var.network_self_link to produce the required format.
  */
+
+locals {
+  # Convert full self_link URL to the short form required by policy-based routes.
+  # Example: https://www.googleapis.com/compute/v1/projects/P/global/networks/N
+  #       →  projects/P/global/networks/N
+  network_id = replace(var.network_self_link, "https://www.googleapis.com/compute/v1/", "")
+}
 
 # Dedicated proxy-only subnet for the SWP gateway.
 # purpose = REGIONAL_MANAGED_PROXY + role = ACTIVE is required by SWP in
@@ -98,7 +113,7 @@ resource "google_network_services_gateway" "swp" {
 
   gateway_security_policy = google_network_security_gateway_security_policy.swp.id
   network                 = var.network_self_link
-  subnetwork              = google_compute_subnetwork.swp_proxy.id
+  subnetwork              = google_compute_subnetwork.swp_proxy.self_link
 
   # SWP auto-creates a Cloud Router for its own proxy-originated egress.
   # This flag ensures that hidden router is removed when the gateway is
@@ -119,7 +134,7 @@ resource "google_network_connectivity_policy_based_route" "swp_anti_loop" {
   project     = var.project_id
   name        = "${var.name_prefix}-pbr-swp-antiloop"
   description = "Anti-loop: SWP proxy-own traffic exits via default route, not back through SWP"
-  network     = var.network_self_link
+  network     = local.network_id
 
   filter {
     protocol_version = "IPV4"
@@ -139,7 +154,7 @@ resource "google_network_connectivity_policy_based_route" "agw_to_swp" {
   project     = var.project_id
   name        = "${var.name_prefix}-pbr-agw-to-swp"
   description = "Force Agent Gateway PSC-I egress through Secure Web Proxy"
-  network     = var.network_self_link
+  network     = local.network_id
 
   filter {
     protocol_version = "IPV4"
