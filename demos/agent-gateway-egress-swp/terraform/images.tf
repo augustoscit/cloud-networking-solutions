@@ -87,7 +87,7 @@ data "external" "mcp_image_present" {
 
   program = ["bash", "-c", <<-EOT
     tag="${local.mcp_image_uri[each.key]}"
-    if gcloud artifacts docker images describe "$tag" --quiet 2>/dev/null; then
+    if gcloud artifacts docker images describe "$tag" --quiet >/dev/null 2>&1; then
       echo '{"present":"true"}'
     else
       echo '{"present":"false"}'
