@@ -25,17 +25,17 @@ Serves three tools:
   get_ticket          — returns a single ticket by ID
   search_tickets      — full-text search across title + description
 
-Transport: streamable-HTTP (Starlette), matching what MCPToolset +
-StreamableHTTPConnectionParams expects. Mount point: /mcp
+Transport: streamable-HTTP (fastmcp 3.x), matching what MCPToolset +
+StreamableHTTPConnectionParams expects. Mount point: /mcp (default)
 """
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.server import Settings
+from fastmcp import FastMCP
 
 # ---------------------------------------------------------------------------
 # In-memory dataset
@@ -139,11 +139,10 @@ _TICKETS: list[dict[str, Any]] = [
 mcp = FastMCP(
     name="bug-tickets-mcp",
     instructions="Bug ticket database for QuantumRoast coffee machines. Use list_tickets to browse, get_ticket to retrieve details by ID, and search_tickets for full-text search.",
-    settings=Settings(port=8080),
 )
 
 
-@mcp.tool()
+@mcp.tool
 def list_tickets(
     status: str | None = None,
     priority: str | None = None,
@@ -169,7 +168,7 @@ def list_tickets(
     return results
 
 
-@mcp.tool()
+@mcp.tool
 def get_ticket(ticket_id: str) -> dict[str, Any] | None:
     """Retrieve a single ticket by its ID (e.g. 'QR-001').
 
@@ -185,7 +184,7 @@ def get_ticket(ticket_id: str) -> dict[str, Any] | None:
     return None
 
 
-@mcp.tool()
+@mcp.tool
 def search_tickets(query: str) -> list[dict[str, Any]]:
     """Search tickets by keyword across title, description, and tags.
 
@@ -213,6 +212,8 @@ def search_tickets(query: str) -> list[dict[str, Any]]:
 
 
 if __name__ == "__main__":
-    # Run with streamable-HTTP transport on port 8080.
-    # The MCPToolset in the agent uses StreamableHTTPConnectionParams(url=.../mcp)
-    mcp.run(transport="streamable-http")
+    # Cloud Run sets PORT; default to 8080.
+    # Transport "http" uses streamable-HTTP (fastmcp 3.x default for HTTP).
+    # The MCPToolset in the agent connects to <url>/mcp — FastMCP serves at /mcp by default.
+    port = int(os.environ.get("PORT", 8080))
+    mcp.run(transport="http", host="0.0.0.0", port=port)
