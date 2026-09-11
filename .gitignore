@@ -19,6 +19,9 @@ backend.conf
 bin/
 vendor/
 
+# Python
+__pycache__/
+
 # OS files
 .DS_Store
 Thumbs.db
