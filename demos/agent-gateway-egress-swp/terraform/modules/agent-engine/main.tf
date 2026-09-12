@@ -132,11 +132,16 @@ locals {
       # customer VPCs); this env var uses set_up()'s _telemetry_enabled() path, which
       # does not make that health-check call. See deploy_agent.py for details.
       GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY              = "true"
-      # Force the SDK to use *.googleapis.com (standard HTTPS) rather than
-      # *.mtls.googleapis.com (internal Google mTLS, unreachable from customer VPCs).
-      # Affects calls to Vertex AI, Cloud Trace, and other Google APIs — all of which
-      # are reachable via Private Google Access with the DNS override zones provisioned
-      # in the networking module.
+      # Prevent google-genai (used by VertexAiSessionService / ADK sessions) from
+      # auto-enabling mTLS. When running in GCE the container has a workload
+      # certificate; google.auth.transport.mtls.should_use_client_cert() detects
+      # it and google-genai rewrites every *.googleapis.com URL to
+      # *.mtls.googleapis.com. Those mTLS endpoints are Google-internal and
+      # unreachable from the customer VPC. Setting this to "false" prevents
+      # should_use_client_cert() from returning True regardless of certs present.
+      GOOGLE_API_USE_CLIENT_CERTIFICATE                       = "false"
+      # Belt-and-suspenders: also tell the older google-api-python-client not to
+      # use mTLS (this was the original fix for telemetry.mtls.googleapis.com).
       GOOGLE_API_USE_MTLS_ENDPOINT                            = "never"
       # Disable gRPC DirectPath (google-c2p / C2P resolver). When running in GCE,
       # gRPC auto-enables DirectPath, which bypasses DNS and provides Google-internal
