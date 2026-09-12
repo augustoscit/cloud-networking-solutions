@@ -313,20 +313,36 @@ accept connections from within Google's infrastructure — accessing them from a
 public IP causes `SSLEOFError: UNEXPECTED_EOF_WHILE_READING`, which surfaces
 as a `UserCodeControlPlaneError` and prevents the Reasoning Engine from starting.
 
-This demo addresses the issue with three complementary resources:
+This demo addresses the issue with four complementary measures:
 
-1. `private_ip_google_access = true` on the Agent Gateway subnet — enables
+1. **`GOOGLE_API_USE_MTLS_ENDPOINT = "never"`** — set as an env var on the
+   Reasoning Engine. This is the primary fix: it forces the Vertex AI SDK to
+   use `*.googleapis.com` (standard HTTPS) instead of `*.mtls.googleapis.com`
+   (Google-internal mTLS, not accessible from customer VPCs even via PGA).
+2. `private_ip_google_access = true` on the Agent Gateway subnet — enables
    Private Google Access so the subnet can reach Google APIs internally.
-2. **Private Cloud DNS zones** — override `*.googleapis.com` and
+3. **Private Cloud DNS zones** — override `*.googleapis.com` and
    `*.mtls.googleapis.com` to resolve to the `private.googleapis.com` VIP
-   (`199.36.153.8/30`) instead of their public IPs.
-3. **PBRs at priority 1500** — route traffic destined for `199.36.153.8/30`
+   (`199.36.153.8/30`) instead of their public IPs. This ensures that even if
+   the SDK temporarily uses an mTLS variant hostname, traffic is still routed
+   to the private VIP.
+4. **PBRs at priority 1500** — route traffic destined for `199.36.153.8/30`
    (and `199.36.153.4/30`) via `DEFAULT_ROUTING`, bypassing the SWP. This means
    Google API calls exit via PGA (internal, no NAT), while all other internet
    traffic continues through the SWP → Cloud NAT path.
 
-If you ever see the Reasoning Engine failing with `telemetry.mtls.googleapis.com`
-SSL errors, verify that:
+**Why `GOOGLE_API_USE_MTLS_ENDPOINT = "never"` is necessary**: The
+`*.mtls.googleapis.com` endpoints use Google's internal service-mesh mTLS
+protocol, which is fundamentally different from standard client-side mTLS. Even
+when you point DNS at `private.googleapis.com` (199.36.153.8/30) and route
+via PGA, the `private.googleapis.com` VIP handles standard HTTPS calls — not
+the internal mTLS protocol. This results in `ConnectionResetError: Connection
+reset by peer` from the VIP. The `GOOGLE_API_USE_MTLS_ENDPOINT = "never"` env
+var prevents the SDK from attempting `*.mtls.googleapis.com` at all.
+
+If you ever see the Reasoning Engine failing with SSL or connection errors during
+`set_up()`, verify that:
+- `GOOGLE_API_USE_MTLS_ENDPOINT = "never"` is set on the Reasoning Engine env vars
 - The Agent Gateway subnet has `PRIVATE_IP_GOOGLE_ACCESS = True` (`gcloud compute networks subnets describe`)
 - The DNS zones exist (`gcloud dns managed-zones list`)
 - The bypass PBRs exist (`gcloud network-connectivity policy-based-routes list`)
