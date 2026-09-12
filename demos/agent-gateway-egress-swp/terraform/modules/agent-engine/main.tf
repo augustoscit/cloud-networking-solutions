@@ -126,6 +126,13 @@ locals {
       GOOGLE_GENAI_USE_VERTEXAI                               = "True"
       GOOGLE_CLOUD_LOCATION                                   = var.model_endpoint_location
       MODEL_NAME                                              = var.agent_model
+      # When bound to an Agent Gateway, all container egress enters the customer VPC
+      # via PSC-I. The *.mtls.googleapis.com endpoints (used by the Vertex AI SDK
+      # for internal service-mesh mTLS) are NOT accessible from customer VPCs —
+      # even with Private Google Access. Setting this to "never" forces the SDK to
+      # use *.googleapis.com (standard HTTPS), which IS accessible via PGA with the
+      # DNS override zones in the networking module.
+      GOOGLE_API_USE_MTLS_ENDPOINT                            = "never"
     },
     var.mcp_server_url != null ? { BUG_TICKETS_MCP_URL = var.mcp_server_url } : {}
   )
