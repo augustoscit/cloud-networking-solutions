@@ -41,23 +41,18 @@ try:
     _adk_module._warn_if_telemetry_api_disabled = lambda: None
 
     # project_id() calls resource_manager_utils.get_project_id() via gRPC, which
-    # uses the gRPC DirectPath/C2P resolver and tries both IPv6 DirectPath addresses
-    # (2607:f8b0::/32, unreachable: VPC has no IPv6 routes) and IPv4 "240.0.0.2"
-    # (Google internal backend, not routable from customer VPC). Catch all exceptions
-    # and return the project string directly — the SDK accepts project strings (not
-    # only numeric IDs) for OTel setup and session service initialization.
-    _orig_project_id_fget = _adk_module.AdkApp.project_id.fget
-
+    # fails in Agent Gateway deployments because the container DNS resolves
+    # cloudresourcemanager.googleapis.com to a public IP that routes through the
+    # SWP — and the gRPC/TLS handshake fails there.  Replace the method (NOT a
+    # property — the original is a plain method) to return the project string
+    # already stored in _tmpl_attrs, avoiding all network calls.
     def _safe_project_id(self):
         import os
-        project = self._tmpl_attrs.get("project") or os.environ.get("GOOGLE_CLOUD_PROJECT")
-        if not project:
-            return None
-        try:
-            return _orig_project_id_fget(self)
-        except Exception:
-            return project
+        return (
+            self._tmpl_attrs.get("project")
+            or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        )
 
-    _adk_module.AdkApp.project_id = property(_safe_project_id)
+    _adk_module.AdkApp.project_id = _safe_project_id
 except Exception:
     pass

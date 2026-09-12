@@ -51,7 +51,6 @@ except ImportError:
 class SafeAdkApp(AdkApp):
     """AdkApp subclass with a network-free project_id() implementation."""
 
-    @property
     def project_id(self) -> Optional[str]:
         return (
             self._tmpl_attrs.get("project")
