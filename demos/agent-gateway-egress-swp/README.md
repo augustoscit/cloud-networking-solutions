@@ -15,16 +15,13 @@ server on Cloud Run** to read bug tickets. The Cloud Run service sees the
 agent's traffic arriving from the static NAT IP, which you can confirm in its
 request logs.
 
-> **Note:** This Terraform has been authored against current provider docs and
-> validated for schema correctness with `terraform validate`, but has not been
-> applied against a live GCP project in this repository. Run `terraform plan`
-> as the first deploy step to catch any project-specific issues.
-
 ---
 
 ## Architecture
 
 ### Traffic Path
+
+The demo has **two distinct egress paths** from the Reasoning Engine:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -38,25 +35,41 @@ request logs.
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Customer VPC                                                        │
 │                                                                      │
-│   [Agent Gateway subnet 10.20.0.0/26]                                │
+│   [Agent Gateway subnet 10.20.0.0/26]  (Private Google Access ON)   │
 │          │                                                           │
-│          │ Policy-Based Route (src=10.20.0.0/26, dst=0.0.0.0/0)     │
-│          │ next_hop_ilb_ip = SWP gateway internal IP                 │
-│          ▼                                                           │
-│   Secure Web Proxy (NEXT_HOP_ROUTING_MODE)                           │
-│     • gateway_security_policy: ALLOW all (no TLS inspection)         │
-│     • Anti-loop PBR: proxy-own traffic exits via default route       │
-│          │                                                           │
-│          ▼                                                           │
-│   Cloud Router → Cloud NAT                                           │
-│     • nat_ip_allocate_option = MANUAL_ONLY                           │
-│     • Reserved static external IP (the address MCP server sees)      │
-└──────────────────────────────────────────────────────────────────────┘
-                              │ Public internet
-                              ▼
-                   bug-tickets-mcp (Cloud Run)
-                   INGRESS_TRAFFIC_ALL · no IAM gate
+│    DNS?  │                                                           │
+│   ┌──────┴──────────────────┐                                        │
+│   │                         │                                        │
+│   │ *.googleapis.com        │ all other traffic                      │
+│   │ → DNS: 199.36.153.8/30  │ → DNS: public IP                       │
+│   │                         │                                        │
+│   │ PBR 1500: bypass SWP    │ PBR 2000: redirect to SWP              │
+│   │ DEFAULT_ROUTING         │ next_hop_ilb_ip = SWP internal IP      │
+│   │        │                │        │                               │
+│   │        ▼                │        ▼                               │
+│   │ Private Google Access   │ Secure Web Proxy (NEXT_HOP_MODE)       │
+│   │ (internal, no NAT)      │   • ALLOW policy (no TLS inspection)   │
+│   │        │                │   • Anti-loop PBR (priority 1000)      │
+│   │        ▼                │        │                               │
+│   │ Google APIs ✓           │        ▼                               │
+│   │ (telemetry, Vertex AI,  │ Cloud Router → Cloud NAT               │
+│   │  model endpoint, etc.)  │   • MANUAL_ONLY · static external IP   │
+│   │                         │        │                               │
+│   └─────────────────────────┘        │ Public internet               │
+│                                      ▼                               │
+└──────────────────────────── bug-tickets-mcp (Cloud Run) ─────────────┘
+                                INGRESS_TRAFFIC_ALL · no IAM gate
+                                (sees the static NAT IP as source)
 ```
+
+> **Why two paths?** When a Reasoning Engine is bound to an Agent Gateway, ALL
+> its outbound traffic enters the customer VPC via PSC-I. Internal Google API
+> endpoints (`*.mtls.googleapis.com`, Vertex AI, Cloud Trace, etc.) can only
+> be reached from within Google's infrastructure — routing them through Cloud NAT
+> (a public IP) causes SSL handshake failures. The DNS override + PBR bypass
+> routes Google API traffic via **Private Google Access** (internal, no NAT),
+> while all other internet traffic (the MCP server) still goes through the
+> SWP → Cloud NAT path where the static IP is enforced.
 
 ### Layer-by-Layer Reference Table
 
@@ -66,8 +79,11 @@ request logs.
 | **Agent Gateway binding** | `agent_gateway_config.agent_to_anywhere_config.agent_gateway` routes ALL engine egress through the customer VPC | same resource, `agent_gateway_config` block |
 | **PSC-Interface** | Dedicated network attachment connecting Agent Runtime to the customer VPC | `google_compute_network_attachment` in `modules/agent-gateway/main.tf` |
 | **Agent Gateway** | `AGENT_TO_ANYWHERE` gateway terminates PSC-I and injects traffic into the Agent Gateway subnet | `google_network_services_agent_gateway` in `modules/agent-gateway/main.tf` |
-| **Policy-Based Route (forced)** | Redirects Agent Gateway subnet egress (src `10.20.0.0/26`, dst `0.0.0.0/0`) to the SWP gateway IP | `google_network_connectivity_policy_based_route.agw_to_swp` in `modules/secure-web-proxy/main.tf` |
-| **Policy-Based Route (anti-loop)** | Prevents SWP's own proxy-originated connections from looping back through the SWP | `google_network_connectivity_policy_based_route.swp_anti_loop` in `modules/secure-web-proxy/main.tf` |
+| **Private Google Access** | Enabled on the Agent Gateway subnet so Google API traffic can exit internally without NAT | `private_ip_google_access = true` on `google_compute_subnetwork.agent_gateway` in `modules/networking/main.tf` |
+| **DNS override (googleapis)** | Private Cloud DNS zones redirect `*.googleapis.com` and `*.mtls.googleapis.com` to the `private.googleapis.com` VIP (`199.36.153.8/30`) | `google_dns_managed_zone.googleapis_private` + `.mtls_googleapis_private` in `modules/networking/main.tf` |
+| **Policy-Based Route (googleapis bypass)** | Priority 1500 — lets traffic destined for `199.36.153.8/30` and `199.36.153.4/30` take the default route (Private Google Access), bypassing the SWP | `google_network_connectivity_policy_based_route.googleapis_bypass` + `.googleapis_restricted_bypass` in `modules/secure-web-proxy/main.tf` |
+| **Policy-Based Route (forced SWP)** | Priority 2000 — redirects all remaining Agent Gateway subnet egress (src `10.20.0.0/26`, dst `0.0.0.0/0`) to the SWP gateway IP | `google_network_connectivity_policy_based_route.agw_to_swp` in `modules/secure-web-proxy/main.tf` |
+| **Policy-Based Route (anti-loop)** | Priority 1000 — prevents SWP's own proxy-originated connections from looping back through the SWP | `google_network_connectivity_policy_based_route.swp_anti_loop` in `modules/secure-web-proxy/main.tf` |
 | **Secure Web Proxy** | L7 proxy in `NEXT_HOP_ROUTING_MODE`; applies `ALLOW` security policy; forwards traffic to the default internet route | `google_network_services_gateway` in `modules/secure-web-proxy/main.tf` |
 | **Cloud NAT** | SNAT with a single reserved static external IP; the MCP server sees this IP | `google_compute_router_nat` + `google_compute_address.nat` in `modules/networking/main.tf` |
 | **bug-tickets-mcp** | Public Cloud Run service (`INGRESS_TRAFFIC_ALL`); no IAP or auth; logs the caller's IP in `X-Forwarded-For` | `modules/mcp-cloud-run` + `images.tf` (Cloud Build from source) |
@@ -285,6 +301,35 @@ the SWP module to clean up the hidden router on `terraform destroy`.
 
 If you see an unexpected Cloud Router in the Console (named something like
 `swg-autogen-router-...`), this is it — leave it alone.
+
+### Google API calls require Private Google Access + DNS override
+
+When a Reasoning Engine is bound to an Agent Gateway, **all** its outbound
+traffic enters the customer VPC via PSC-I. Without additional configuration,
+internal Google endpoints like `telemetry.mtls.googleapis.com` (used by the
+Vertex AI SDK for Cloud Trace during `set_up()`) would be routed through the
+SWP → Cloud NAT path (public IP). Those `*.mtls.googleapis.com` endpoints only
+accept connections from within Google's infrastructure — accessing them from a
+public IP causes `SSLEOFError: UNEXPECTED_EOF_WHILE_READING`, which surfaces
+as a `UserCodeControlPlaneError` and prevents the Reasoning Engine from starting.
+
+This demo addresses the issue with three complementary resources:
+
+1. `private_ip_google_access = true` on the Agent Gateway subnet — enables
+   Private Google Access so the subnet can reach Google APIs internally.
+2. **Private Cloud DNS zones** — override `*.googleapis.com` and
+   `*.mtls.googleapis.com` to resolve to the `private.googleapis.com` VIP
+   (`199.36.153.8/30`) instead of their public IPs.
+3. **PBRs at priority 1500** — route traffic destined for `199.36.153.8/30`
+   (and `199.36.153.4/30`) via `DEFAULT_ROUTING`, bypassing the SWP. This means
+   Google API calls exit via PGA (internal, no NAT), while all other internet
+   traffic continues through the SWP → Cloud NAT path.
+
+If you ever see the Reasoning Engine failing with `telemetry.mtls.googleapis.com`
+SSL errors, verify that:
+- The Agent Gateway subnet has `PRIVATE_IP_GOOGLE_ACCESS = True` (`gcloud compute networks subnets describe`)
+- The DNS zones exist (`gcloud dns managed-zones list`)
+- The bypass PBRs exist (`gcloud network-connectivity policy-based-routes list`)
 
 ### PSC-I subnet must be /26 or larger
 
