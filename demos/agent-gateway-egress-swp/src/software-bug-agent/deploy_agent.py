@@ -153,17 +153,14 @@ def main() -> None:
 
     from software_bug_agent.agent import root_agent
 
-    # Do NOT pass enable_tracing=True — that triggers _warn_if_telemetry_api_disabled()
-    # in set_up(), which calls telemetry.googleapis.com (an internal Google endpoint
-    # that is unreachable from customer VPCs even with Private Google Access).
-    # Telemetry is instead controlled via GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY
-    # env var set on the Reasoning Engine, which is the current SDK recommendation.
-    try:
-        from vertexai.agent_engines import AdkApp
-        app = AdkApp(agent=root_agent)
-    except ImportError:
-        from vertexai.preview.reasoning_engines import AdkApp  # type: ignore[no-redef]
-        app = AdkApp(agent=root_agent)
+    # Use SafeAdkApp instead of AdkApp.  SafeAdkApp overrides project_id() so
+    # that set_up() never makes gRPC calls to cloudresourcemanager.googleapis.com.
+    # When the pickle is deserialized in the Reasoning Engine container, Python
+    # imports software_bug_agent.safe_adk (the class's home module), which
+    # guarantees the override is active before set_up() is called.
+    # See software_bug_agent/safe_adk.py for the full rationale.
+    from software_bug_agent.safe_adk import SafeAdkApp
+    app = SafeAdkApp(agent=root_agent)
 
     description = "Software bug-triage agent for QuantumRoast — demonstrates public-internet egress via SWP + Cloud NAT with static IP (CUJ2)."
 
