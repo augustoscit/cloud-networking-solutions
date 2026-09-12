@@ -153,14 +153,17 @@ def main() -> None:
 
     from software_bug_agent.agent import root_agent
 
-    # Wrap in InstrumentedAdkApp for OTel tracing if available; fall back to
-    # plain AdkApp for local/CI environments without the OTel extras.
+    # Do NOT pass enable_tracing=True — that triggers _warn_if_telemetry_api_disabled()
+    # in set_up(), which calls telemetry.googleapis.com (an internal Google endpoint
+    # that is unreachable from customer VPCs even with Private Google Access).
+    # Telemetry is instead controlled via GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY
+    # env var set on the Reasoning Engine, which is the current SDK recommendation.
     try:
         from vertexai.agent_engines import AdkApp
-        app = AdkApp(agent=root_agent, enable_tracing=True)
+        app = AdkApp(agent=root_agent)
     except ImportError:
         from vertexai.preview.reasoning_engines import AdkApp  # type: ignore[no-redef]
-        app = AdkApp(agent=root_agent, enable_tracing=True)
+        app = AdkApp(agent=root_agent)
 
     description = "Software bug-triage agent for QuantumRoast — demonstrates public-internet egress via SWP + Cloud NAT with static IP (CUJ2)."
 

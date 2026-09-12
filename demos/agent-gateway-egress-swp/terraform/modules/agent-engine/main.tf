@@ -126,12 +126,17 @@ locals {
       GOOGLE_GENAI_USE_VERTEXAI                               = "True"
       GOOGLE_CLOUD_LOCATION                                   = var.model_endpoint_location
       MODEL_NAME                                              = var.agent_model
-      # When bound to an Agent Gateway, all container egress enters the customer VPC
-      # via PSC-I. The *.mtls.googleapis.com endpoints (used by the Vertex AI SDK
-      # for internal service-mesh mTLS) are NOT accessible from customer VPCs —
-      # even with Private Google Access. Setting this to "never" forces the SDK to
-      # use *.googleapis.com (standard HTTPS), which IS accessible via PGA with the
-      # DNS override zones in the networking module.
+      # Telemetry is enabled via the new env-var mechanism instead of the deprecated
+      # enable_tracing=True AdkApp parameter. The old parameter triggers a startup
+      # call to telemetry.googleapis.com (internal Google endpoint, unreachable from
+      # customer VPCs); this env var uses set_up()'s _telemetry_enabled() path, which
+      # does not make that health-check call. See deploy_agent.py for details.
+      GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY              = "true"
+      # Force the SDK to use *.googleapis.com (standard HTTPS) rather than
+      # *.mtls.googleapis.com (internal Google mTLS, unreachable from customer VPCs).
+      # Affects calls to Vertex AI, Cloud Trace, and other Google APIs — all of which
+      # are reachable via Private Google Access with the DNS override zones provisioned
+      # in the networking module.
       GOOGLE_API_USE_MTLS_ENDPOINT                            = "never"
     },
     var.mcp_server_url != null ? { BUG_TICKETS_MCP_URL = var.mcp_server_url } : {}
