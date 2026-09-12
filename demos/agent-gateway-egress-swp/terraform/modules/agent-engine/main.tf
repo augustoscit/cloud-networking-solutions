@@ -138,6 +138,15 @@ locals {
       # are reachable via Private Google Access with the DNS override zones provisioned
       # in the networking module.
       GOOGLE_API_USE_MTLS_ENDPOINT                            = "never"
+      # Disable gRPC DirectPath (google-c2p / C2P resolver). When running in GCE,
+      # gRPC auto-enables DirectPath, which bypasses DNS and provides Google-internal
+      # backend addresses (240.0.0.x IPv4, 2607:f8b0::/32 IPv6). These addresses are
+      # unreachable from customer VPCs — the customer VPC has no route for 240.0.0.0/4
+      # and no IPv6 support. Setting GRPC_DNS_RESOLVER=native forces gRPC to use
+      # standard DNS resolution instead: googleapis.com endpoints resolve to
+      # 199.36.153.8/30 (private.googleapis.com VIP) via the private Cloud DNS zones
+      # and are then routed via PGA (bypassing SWP/Cloud NAT).
+      GRPC_DNS_RESOLVER                                       = "native"
     },
     var.mcp_server_url != null ? { BUG_TICKETS_MCP_URL = var.mcp_server_url } : {}
   )

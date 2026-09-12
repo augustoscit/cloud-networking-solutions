@@ -39,5 +39,25 @@
 try:
     from vertexai.agent_engines.templates import adk as _adk_module
     _adk_module._warn_if_telemetry_api_disabled = lambda: None
+
+    # project_id() calls resource_manager_utils.get_project_id() via gRPC, which
+    # uses the gRPC DirectPath/C2P resolver and tries both IPv6 DirectPath addresses
+    # (2607:f8b0::/32, unreachable: VPC has no IPv6 routes) and IPv4 "240.0.0.2"
+    # (Google internal backend, not routable from customer VPC). Catch all exceptions
+    # and return the project string directly — the SDK accepts project strings (not
+    # only numeric IDs) for OTel setup and session service initialization.
+    _orig_project_id_fget = _adk_module.AdkApp.project_id.fget
+
+    def _safe_project_id(self):
+        import os
+        project = self._tmpl_attrs.get("project") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        if not project:
+            return None
+        try:
+            return _orig_project_id_fget(self)
+        except Exception:
+            return project
+
+    _adk_module.AdkApp.project_id = property(_safe_project_id)
 except Exception:
     pass
