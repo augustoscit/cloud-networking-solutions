@@ -55,6 +55,14 @@ import stat
 import sys
 import tempfile
 
+# Load .env before reading any os.environ values so that local runs don't
+# require manually exporting PROJECT_ID / BUG_TICKETS_MCP_URL etc.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # See demos/agent-gateway/src/mortgage-agent/deploy_agent.py for the
 # rationale: this overlay-venv script ensures the agent's dependencies
 # layer OVER the base image rather than replacing its site-packages,

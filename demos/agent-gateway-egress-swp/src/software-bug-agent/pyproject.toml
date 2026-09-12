@@ -11,6 +11,10 @@ dependencies = [
     "google-cloud-aiplatform[agent_engines]>=1.149.0,<1.154.0",
     "google-adk[a2a,agent-identity]==1.34.0",
     "google-auth>=2.0",
+    # mcp is the MCP *client* SDK used by ADK's MCPToolset internally.
+    # Pinned here to match the container requirement in deploy_agent.py and prevent
+    # local dev from resolving a mcp 2.x build (breaking API change).
+    "mcp>=1.28.1,<2.0.0",
     "cloudpickle",
     "pydantic",
     "python-dotenv>=1.1.0",
