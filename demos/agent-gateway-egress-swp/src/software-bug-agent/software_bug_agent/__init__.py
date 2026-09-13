@@ -53,29 +53,33 @@
 # _tmpl_attrs rather than calling cloudresourcemanager.googleapis.com.
 # ---------------------------------------------------------------------------
 
+import os as _os
 import re as _re
 import socket as _socket
 
-_GOOGLEAPIS_RE = _re.compile(r'.*\.googleapis\.com$')
-_PGA_VIP = "199.36.153.8"
-_orig_getaddrinfo = _socket.getaddrinfo
+# Only apply the getaddrinfo redirect inside the RE container. The RE runtime
+# sets GOOGLE_CLOUD_AGENT_ENGINE_ID; local builds (deploy_agent.py --build-only)
+# do not have it, so the patch must not run there — 199.36.153.8 is only
+# reachable via Private Google Access inside the customer VPC.
+if _os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ID"):
+    _GOOGLEAPIS_RE = _re.compile(r'.*\.googleapis\.com$')
+    _PGA_VIP = "199.36.153.8"
+    _orig_getaddrinfo = _socket.getaddrinfo
 
+    def _googleapis_getaddrinfo(host, port, *args, **kwargs):
+        """Redirect *.googleapis.com DNS to 199.36.153.8 (private.googleapis.com VIP).
 
-def _googleapis_getaddrinfo(host, port, *args, **kwargs):
-    """Redirect *.googleapis.com DNS to 199.36.153.8 (private.googleapis.com VIP).
+        The container's internal DNS returns Google-internal IPs for regional API
+        endpoints (e.g. us-central1-aiplatform.googleapis.com) that are not
+        routable from the customer VPC. Redirecting to 199.36.153.8 lets the VPC's
+        PBR 1500 route those calls via Private Google Access, where Google's
+        SNI-based routing dispatches them to the correct backend.
+        """
+        if isinstance(host, str) and _GOOGLEAPIS_RE.match(host):
+            return [(_socket.AF_INET, _socket.SOCK_STREAM, 6, '', (_PGA_VIP, port))]
+        return _orig_getaddrinfo(host, port, *args, **kwargs)
 
-    The container's internal DNS returns Google-internal IPs for regional API
-    endpoints (e.g. us-central1-aiplatform.googleapis.com) that are not
-    routable from the customer VPC. Redirecting to 199.36.153.8 lets the VPC's
-    PBR 1500 route those calls via Private Google Access, where Google's
-    SNI-based routing dispatches them to the correct backend.
-    """
-    if isinstance(host, str) and _GOOGLEAPIS_RE.match(host):
-        return [(_socket.AF_INET, _socket.SOCK_STREAM, 6, '', (_PGA_VIP, port))]
-    return _orig_getaddrinfo(host, port, *args, **kwargs)
-
-
-_socket.getaddrinfo = _googleapis_getaddrinfo
+    _socket.getaddrinfo = _googleapis_getaddrinfo
 
 try:
     from vertexai.agent_engines.templates import adk as _adk_module
