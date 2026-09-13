@@ -13,34 +13,43 @@
 # limitations under the License.
 
 # ---------------------------------------------------------------------------
-# SafeAdkApp — AdkApp subclass that avoids gRPC calls during set_up()
+# SafeAdkApp — AdkApp subclass that avoids network calls during set_up()
 #
 # When a Reasoning Engine is bound to an Agent Gateway, all container egress
-# enters the customer VPC via PSC-I.  AdkApp.set_up() calls self.project_id,
-# which invokes resource_manager_utils.get_project_id() over gRPC to
-# cloudresourcemanager.googleapis.com.  With GRPC_DNS_RESOLVER=native the
-# container resolves that hostname to a real public Google IP (~173.194.x.x),
-# which is then routed through the Secure Web Proxy — and the gRPC/TLS
-# handshake fails because the SWP is not a transparent TCP proxy for gRPC.
+# enters the customer VPC via PSC-I.  Two network calls in set_up() fail:
 #
-# The project ID string is already baked into the pickle at build time
-# (stored in self._tmpl_attrs["project"] by AdkApp.__init__).  The OTel
-# instrumentor only needs a project identifier string — it does NOT require
-# the numeric project number that get_project_id() would return.  So we
-# override project_id to return the stored string directly.
+# 1. project_id() — calls resource_manager_utils.get_project_id() over gRPC
+#    to cloudresourcemanager.googleapis.com.  The SWP is not a transparent
+#    TCP proxy for gRPC, so this call fails.
+#    Fix: override project_id() to return the string baked into the pickle.
+#
+# 2. VertexAiSessionService — AdkApp.set_up() instantiates this when
+#    GOOGLE_CLOUD_AGENT_ENGINE_ID is in the environment (i.e. always in the
+#    RE container).  It calls us-central1-aiplatform.googleapis.com via
+#    aiohttp.  The RE container's internal DNS resolver returns a DirectPath
+#    IP (240.x.x.x) for that regional endpoint; those IPs are not routable
+#    from the customer VPC, so the connection fails with ENETUNREACH (or,
+#    after the getaddrinfo patch redirects to 199.36.153.8, with a TLS
+#    error because private.googleapis.com does not support that endpoint).
+#    Fix: pass session_service_builder=InMemorySessionService so set_up()
+#    never instantiates VertexAiSessionService.  Sessions are in-memory per
+#    worker — sufficient for a demo where session persistence across RE
+#    instances is not required.
+#
+# Similarly, memory_service_builder=InMemoryMemoryService avoids
+# VertexAiMemoryBankService, which has the same network-unreachable problem.
 #
 # Why a subclass instead of a monkey-patch in __init__.py?
 # The pickle references the class by its fully-qualified name
 # (software_bug_agent.safe_adk.SafeAdkApp), so pickle deserialization
 # imports THIS module — guaranteeing the override is active before
-# set_up() is ever called.  A monkey-patch in __init__.py is not reliable
-# because software_bug_agent is not imported during plain AdkApp unpickling.
+# set_up() is ever called.
 # ---------------------------------------------------------------------------
 
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Any, Optional
 
 try:
     from vertexai.agent_engines import AdkApp
@@ -49,7 +58,15 @@ except ImportError:
 
 
 class SafeAdkApp(AdkApp):
-    """AdkApp subclass with a network-free project_id() implementation."""
+    """AdkApp subclass that avoids network calls during set_up()."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        from google.adk.sessions.in_memory_session_service import InMemorySessionService
+        from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
+
+        kwargs.setdefault("session_service_builder", InMemorySessionService)
+        kwargs.setdefault("memory_service_builder", InMemoryMemoryService)
+        super().__init__(**kwargs)
 
     def project_id(self) -> Optional[str]:
         return (
