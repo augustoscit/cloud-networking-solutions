@@ -13,39 +13,75 @@
 # limitations under the License.
 
 # ---------------------------------------------------------------------------
-# Agent Gateway compatibility patch
+# Agent Gateway compatibility patches
 #
 # When a Reasoning Engine is bound to an Agent Gateway, ALL container egress
-# enters the customer VPC via PSC-I. AdkApp.set_up() calls
-# _warn_if_telemetry_api_disabled(), which POSTs to telemetry.googleapis.com
-# — a Google-internal endpoint unreachable from customer VPCs even with
-# Private Google Access. The call raises SSLEOFError, which surfaces as
-# UserCodeControlPlaneError and prevents the engine from starting.
+# enters the customer VPC via PSC-I. Several SDK calls fail because the
+# container uses Google's *internal* DNS (not the customer VPC's Cloud DNS),
+# so *.googleapis.com names resolve to Google-internal IPs that are not
+# routable from the customer VPC.
 #
-# This patch replaces the function with a no-op at import time.  It executes
-# before set_up() is called (the agent source is installed from the
-# dependencies bundle before the pickled AdkApp is loaded), so the guard in
-# set_up():
+# The customer VPC has private Cloud DNS zones that map *.googleapis.com to
+# 199.36.153.8/30 (the private.googleapis.com VIP), plus a PBR that bypasses
+# the SWP for that range so those calls exit via Private Google Access instead
+# of Cloud NAT. But because the container ignores the VPC's Cloud DNS, those
+# zones have no effect.
 #
-#   if self._tmpl_attrs.get("enable_tracing"):
-#       _warn_if_telemetry_api_disabled()
+# Patch 1 — socket.getaddrinfo interception
+# -----------------------------------------
+# Intercept Python-level DNS resolution to redirect every *.googleapis.com
+# hostname to 199.36.153.8 (private.googleapis.com VIP), replicating in
+# userspace what the VPC Cloud DNS zones were supposed to do. This fixes:
+#   - VertexAiSessionService (aiohttp) → us-central1-aiplatform.googleapis.com
+#   - OTel OTLP exporter (requests) → telemetry.googleapis.com
+#   - google-genai model calls → aiplatform.googleapis.com
+# Traffic to non-googleapis.com hosts (e.g. *.run.app MCP server) is
+# unaffected and continues through SWP → Cloud NAT (the CUJ2 mechanism).
+# gRPC's native resolver calls libc getaddrinfo (not Python's), so gRPC is
+# handled separately by GRPC_DNS_RESOLVER=native + SafeAdkApp.project_id().
 #
-# ends up calling our no-op even when the pickle was built with
-# enable_tracing=True.  New artifacts built from this source will not pass
-# enable_tracing=True at all, making this patch doubly redundant — but it
-# remains here as a safety net for any transient scenario where the old
-# parameter surfaces.
+# Patch 2 — _warn_if_telemetry_api_disabled no-op
+# ------------------------------------------------
+# Safety net for old pickles that still have enable_tracing=True. New pickles
+# use SafeAdkApp (which never sets enable_tracing) so this branch is never
+# reached, but it remains here to guard against transient scenarios.
+#
+# Patch 3 — AdkApp.project_id fallback
+# -------------------------------------
+# Safety net: if the monkey-patch here runs but SafeAdkApp's override does
+# not (e.g. an old pickle), make project_id() return the project string from
+# _tmpl_attrs rather than calling cloudresourcemanager.googleapis.com.
 # ---------------------------------------------------------------------------
+
+import re as _re
+import socket as _socket
+
+_GOOGLEAPIS_RE = _re.compile(r'.*\.googleapis\.com$')
+_PGA_VIP = "199.36.153.8"
+_orig_getaddrinfo = _socket.getaddrinfo
+
+
+def _googleapis_getaddrinfo(host, port, *args, **kwargs):
+    """Redirect *.googleapis.com DNS to 199.36.153.8 (private.googleapis.com VIP).
+
+    The container's internal DNS returns Google-internal IPs for regional API
+    endpoints (e.g. us-central1-aiplatform.googleapis.com) that are not
+    routable from the customer VPC. Redirecting to 199.36.153.8 lets the VPC's
+    PBR 1500 route those calls via Private Google Access, where Google's
+    SNI-based routing dispatches them to the correct backend.
+    """
+    if isinstance(host, str) and _GOOGLEAPIS_RE.match(host):
+        return [(_socket.AF_INET, _socket.SOCK_STREAM, 6, '', (_PGA_VIP, port))]
+    return _orig_getaddrinfo(host, port, *args, **kwargs)
+
+
+_socket.getaddrinfo = _googleapis_getaddrinfo
+
 try:
     from vertexai.agent_engines.templates import adk as _adk_module
+
     _adk_module._warn_if_telemetry_api_disabled = lambda: None
 
-    # project_id() calls resource_manager_utils.get_project_id() via gRPC, which
-    # fails in Agent Gateway deployments because the container DNS resolves
-    # cloudresourcemanager.googleapis.com to a public IP that routes through the
-    # SWP — and the gRPC/TLS handshake fails there.  Replace the method (NOT a
-    # property — the original is a plain method) to return the project string
-    # already stored in _tmpl_attrs, avoiding all network calls.
     def _safe_project_id(self):
         import os
         return (
