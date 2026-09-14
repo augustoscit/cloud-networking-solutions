@@ -168,9 +168,9 @@ variable "agent_model" {
 }
 
 variable "model_endpoint_location" {
-  description = "Vertex AI model endpoint location (GOOGLE_CLOUD_LOCATION env). Use 'global' for the global Gemini endpoint."
+  description = "Vertex AI model endpoint location (GOOGLE_CLOUD_LOCATION env). Use a regional value (e.g. 'us-central1') so the genai SDK uses a regional endpoint routable via private.googleapis.com."
   type        = string
-  default     = "global"
+  default     = "us-central1"
 }
 
 variable "agent_display_name" {

@@ -215,7 +215,7 @@ module "agent_engine" {
   agent_display_name            = var.agent_display_name
 
   # Pass the MCP server URL so the agent container receives BUG_TICKETS_MCP_URL
-  mcp_server_url = try(module.mcp_services.service_urls["bug-tickets-mcp"], null)
+  mcp_server_url = try("${module.mcp_services.service_urls["bug-tickets-mcp"]}/mcp", null)
 
   # Wait for the gateway to be fully ready before booting the engine.
   engine_depends_on = module.agent_gateway.wait_for_gateway_id

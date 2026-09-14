@@ -106,7 +106,7 @@ def main() -> None:
     parser.add_argument("--agent-gateway", default=None)
     parser.add_argument("--mcp-url", default=os.environ.get("BUG_TICKETS_MCP_URL"))
     parser.add_argument("--model", default="gemini-2.5-flash")
-    parser.add_argument("--model-endpoint-location", default="global")
+    parser.add_argument("--model-endpoint-location", default="us-central1")
     parser.add_argument(
         "--build-only",
         action="store_true",

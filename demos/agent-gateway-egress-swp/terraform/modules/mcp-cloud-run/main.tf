@@ -163,3 +163,17 @@ resource "google_cloud_run_v2_service_iam_member" "agent_invoker" {
   role     = "roles/run.invoker"
   member   = "serviceAccount:${var.invoker_sa_email}"
 }
+
+# Public unauthenticated access — only when private_networking = false and no
+# invoker SA is specified (CUJ2 "public no-auth MCP server" configuration).
+# When private_networking = true or invoker_sa_email is set, the agent_invoker
+# binding above restricts access to the specific SA instead.
+resource "google_cloud_run_v2_service_iam_member" "allow_unauthenticated" {
+  for_each = !var.private_networking && var.invoker_sa_email == null ? var.services : {}
+
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.mcp[each.key].name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}

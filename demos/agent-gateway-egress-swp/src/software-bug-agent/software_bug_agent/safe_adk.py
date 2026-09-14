@@ -73,3 +73,23 @@ class SafeAdkApp(AdkApp):
             self._tmpl_attrs.get("project")
             or os.environ.get("GOOGLE_CLOUD_PROJECT")
         )
+
+    async def async_stream_query(self, *, message, user_id, session_id=None, **kwargs):
+        # InMemorySessionService stores sessions per-process. The RE container
+        # runs multiple uvicorn worker processes, so a session created in worker A
+        # is invisible to worker B. When session_id is provided but not found on
+        # this worker, catch the error and retry without it — creating a fresh
+        # session on the current worker. This loses cross-worker history but is
+        # acceptable for a demo.
+        try:
+            async for event in super().async_stream_query(
+                message=message, user_id=user_id, session_id=session_id, **kwargs
+            ):
+                yield event
+        except Exception as exc:
+            if "Session not found" not in str(exc) or session_id is None:
+                raise
+            async for event in super().async_stream_query(
+                message=message, user_id=user_id, session_id=None, **kwargs
+            ):
+                yield event
