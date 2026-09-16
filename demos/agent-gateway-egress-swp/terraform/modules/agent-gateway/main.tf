@@ -138,3 +138,40 @@ resource "time_sleep" "wait_for_gateway" {
   depends_on      = [google_network_services_agent_gateway.this]
   create_duration = "30s"
 }
+
+# Automate the lifecycle of the AgentConnectivityTemplate since it is not yet
+# supported in the Google Terraform provider. This ensures it is created, bound,
+# unbound, and deleted automatically during terraform apply/destroy, preventing
+# the template from holding a reference to the VPC and blocking VPC deletion.
+resource "terraform_data" "agent_connectivity_template" {
+  input = {
+    project_id            = var.project_id
+    region                = var.region
+    agent_gateway_name    = google_network_services_agent_gateway.this.name
+    template_name         = "cuj2-template"
+    network_attachment_id = google_compute_network_attachment.agent_gateway.id
+  }
+
+  provisioner "local-exec" {
+    when    = create
+    command = <<-EOT
+      cd ..
+      ./create_connectivity_template.sh "${self.input.project_id}" "${self.input.region}" "${self.input.template_name}" "${self.input.network_attachment_id}"
+      ./bind_connectivity_template.sh "${self.input.project_id}" "${self.input.region}" "${self.input.agent_gateway_name}" "${self.input.template_name}"
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      cd ..
+      ./unbind_connectivity_template.sh "${self.input.project_id}" "${self.input.region}" "${self.input.agent_gateway_name}" || true
+      ./delete_connectivity_template.sh "${self.input.project_id}" "${self.input.region}" "${self.input.template_name}" || true
+    EOT
+  }
+
+  depends_on = [
+    google_network_services_agent_gateway.this,
+    time_sleep.wait_for_gateway
+  ]
+}

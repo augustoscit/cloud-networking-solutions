@@ -173,30 +173,9 @@ After apply, note these outputs:
 terraform output nat_static_ip          # The IP the MCP server will see
 terraform output bug_tickets_mcp_url    # URL used in deploy_agent.py
 terraform output agent_gateway_id       # Used in --agent-gateway flag
-terraform output network_attachment_id  # Used for AgentConnectivityTemplate
 ```
 
-### Step 3.5 — (NEW) Apply AgentConnectivityTemplate
-
-Currently, forcing all traffic to the VPC (VPC_EGRESS_MODE_ALL_TRAFFIC) for SWP and Cloud NAT requires a new resource called `agent_connectivity_template` that is not yet supported in the Google Terraform provider. You must create and bind this template manually using the provided helper scripts.
-
-1. Fetch your Terraform outputs:
-```bash
-export AGENT_GATEWAY_NAME=$(terraform output -raw agent_gateway_name)
-export NETWORK_ATTACHMENT_URI=$(terraform output -raw network_attachment_id)
-```
-
-2. Create the connectivity template:
-```bash
-cd ..
-./create_connectivity_template.sh "${PROJECT_ID}" "${REGION}" "cuj2-template" "${NETWORK_ATTACHMENT_URI}"
-```
-
-3. Bind the template to your Agent Gateway:
-```bash
-./bind_connectivity_template.sh "${PROJECT_ID}" "${REGION}" "${AGENT_GATEWAY_NAME}" "cuj2-template"
-cd terraform
-```
+> **Note:** The configuration to force all traffic to the VPC (`VPC_EGRESS_MODE_ALL_TRAFFIC`) requires an `AgentConnectivityTemplate` resource, which is not yet supported in the Google Terraform provider. The Terraform configuration in `modules/agent-gateway/main.tf` automatically handles creating, binding, unbinding, and deleting this template using `local-exec` provisioners under the hood.
 
 ### Step 4 — Build and stage agent artifacts
 
@@ -414,16 +393,11 @@ The safe destroy order is:
 # 1. Delete the Reasoning Engine first (avoids the drain-gate timeout)
 #    Go to: Vertex AI > Agent Engine > select the engine > Delete
 
-# 2. Unbind and delete the AgentConnectivityTemplate
-export AGENT_GATEWAY_NAME=$(cd terraform && terraform output -raw agent_gateway_name)
-./unbind_connectivity_template.sh "${PROJECT_ID}" "${REGION}" "${AGENT_GATEWAY_NAME}"
-./delete_connectivity_template.sh "${PROJECT_ID}" "${REGION}" "cuj2-template"
-
-# 3. Destroy all Terraform-managed resources
+# 2. Destroy all Terraform-managed resources
 cd terraform
 terraform destroy
 
-# 4. (Optional) Delete the state bucket
+# 3. (Optional) Delete the state bucket
 gcloud storage rm -r "gs://${PROJECT_ID}-tfstate"
 ```
 
