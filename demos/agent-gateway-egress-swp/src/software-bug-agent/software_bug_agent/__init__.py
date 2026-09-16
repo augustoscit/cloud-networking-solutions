@@ -24,7 +24,7 @@
 # Patch 1 — socket.getaddrinfo interception
 # -----------------------------------------
 # Intercepts Python-level DNS resolution to redirect every *.googleapis.com
-# hostname to the actual public anycast IPs, obtained via DNS-over-HTTPS to
+# and *.run.app hostname to the actual public anycast IPs, obtained via DNS-over-HTTPS to
 # Google's public resolver (8.8.8.8:443).
 #
 # Why not redirect to 199.36.153.8 (private.googleapis.com)?
@@ -64,52 +64,48 @@ import socket as _socket
 # sets GOOGLE_CLOUD_AGENT_ENGINE_ID; local builds (deploy_agent.py --build-only)
 # do not have it, so the patch must not run there.
 if _os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ID"):
-    _GOOGLEAPIS_RE = _re.compile(r'.*\.googleapis\.com$')
+    _GOOGLEAPIS_RE = _re.compile(r'.*\.(googleapis\.com|run\.app)$')
     _orig_getaddrinfo = _socket.getaddrinfo
 
-    def _resolve_googleapis_ips():
-        """
-        Resolve googleapis public anycast IPs via DoH to 8.8.8.8:443.
+    _DNS_CACHE = {}
 
-        The container's built-in DNS returns DirectPath IPs (240.x.x.x) for
-        *.googleapis.com — those are Google-internal and not routable from the
-        customer VPC. Querying Google's public DNS-over-HTTPS endpoint returns
-        the real public anycast IPs (172.217.x.x) that are reachable via
-        SWP → Cloud NAT → public internet.
+    def _resolve_via_doh(host):
+        """Resolve public IPs via DoH to 8.8.8.8:443 and cache the result."""
+        if host in _DNS_CACHE:
+            return _DNS_CACHE[host]
 
-        Falls back to hardcoded stable anycast IPs if DoH is unavailable
-        (e.g. network not yet ready at import time).
-        """
         import urllib.request as _req
         import json as _json
-        # Stable Google public anycast IPs for googleapis.com — fallback only.
         _FALLBACK = ["172.217.112.4", "172.217.113.4", "172.217.114.4",
-                     "172.217.115.4", "172.217.116.4"]
+                     "172.217.115.4", "172.217.116.4"] if host.endswith(".googleapis.com") else []
         try:
-            url = "https://8.8.8.8/resolve?name=aiplatform.googleapis.com&type=A"
+            url = f"https://8.8.8.8/resolve?name={host}&type=A"
             r = _req.Request(url, headers={"Accept": "application/dns-json"})
             with _req.urlopen(r, timeout=5) as resp:
                 data = _json.loads(resp.read())
                 ips = [a["data"] for a in data.get("Answer", []) if a.get("type") == 1]
-                return ips if ips else _FALLBACK
+                if ips:
+                    _DNS_CACHE[host] = ips
+                    return ips
+                return _FALLBACK
         except Exception:
             return _FALLBACK
 
-    _GOOGLEAPIS_PUBLIC_IPS = _resolve_googleapis_ips()
-
     def _googleapis_getaddrinfo(host, port, *args, **kwargs):
-        """Redirect *.googleapis.com DNS to public anycast IPs resolved via DoH.
+        """Redirect *.googleapis.com and *.run.app DNS to public anycast IPs resolved via DoH.
 
         The container's built-in DNS returns DirectPath IPs (240.x.x.x) for
-        *.googleapis.com. Those IPs are not routable from the customer VPC.
-        Redirecting to the real public anycast IPs allows traffic to flow via
-        Agent Gateway PSC-I → SWP → Cloud NAT → Vertex AI / Google APIs.
+        *.googleapis.com and may fail for *.run.app. Those IPs are not routable
+        from the customer VPC. Redirecting to the real public IPs allows traffic
+        to flow via Agent Gateway PSC-I → SWP → Cloud NAT.
         """
         if isinstance(host, str) and _GOOGLEAPIS_RE.match(host):
-            return [
-                (_socket.AF_INET, _socket.SOCK_STREAM, 6, "", (ip, port))
-                for ip in _GOOGLEAPIS_PUBLIC_IPS
-            ]
+            ips = _resolve_via_doh(host)
+            if ips:
+                return [
+                    (_socket.AF_INET, _socket.SOCK_STREAM, 6, "", (ip, port))
+                    for ip in ips
+                ]
         return _orig_getaddrinfo(host, port, *args, **kwargs)
 
     _socket.getaddrinfo = _googleapis_getaddrinfo

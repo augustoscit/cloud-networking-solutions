@@ -113,3 +113,13 @@ output "agent_identity_principal" {
   description = "Project-wide agent principal set for all Agent Engine agents in this project."
   value       = module.agent_engine.agent_identity_principal
 }
+
+output "network_attachment_id" {
+  description = "The ID of the PSC-Interface network attachment, required for the AgentConnectivityTemplate."
+  value       = module.agent_gateway.network_attachment_id
+}
+
+output "agent_gateway_name" {
+  description = "The short name of the Agent Gateway."
+  value       = module.agent_gateway.agent_gateway_name
+}

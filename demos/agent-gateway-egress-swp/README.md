@@ -173,6 +173,29 @@ After apply, note these outputs:
 terraform output nat_static_ip          # The IP the MCP server will see
 terraform output bug_tickets_mcp_url    # URL used in deploy_agent.py
 terraform output agent_gateway_id       # Used in --agent-gateway flag
+terraform output network_attachment_id  # Used for AgentConnectivityTemplate
+```
+
+### Step 3.5 — (NEW) Apply AgentConnectivityTemplate
+
+Currently, forcing all traffic to the VPC (VPC_EGRESS_MODE_ALL_TRAFFIC) for SWP and Cloud NAT requires a new resource called `agent_connectivity_template` that is not yet supported in the Google Terraform provider. You must create and bind this template manually using the provided helper scripts.
+
+1. Fetch your Terraform outputs:
+```bash
+export AGENT_GATEWAY_NAME=$(terraform output -raw agent_gateway_name)
+export NETWORK_ATTACHMENT_URI=$(terraform output -raw network_attachment_id)
+```
+
+2. Create the connectivity template:
+```bash
+cd ..
+./create_connectivity_template.sh "${PROJECT_ID}" "${REGION}" "cuj2-template" "${NETWORK_ATTACHMENT_URI}"
+```
+
+3. Bind the template to your Agent Gateway:
+```bash
+./bind_connectivity_template.sh "${PROJECT_ID}" "${REGION}" "${AGENT_GATEWAY_NAME}" "cuj2-template"
+cd terraform
 ```
 
 ### Step 4 — Build and stage agent artifacts
