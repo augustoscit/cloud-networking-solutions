@@ -1,7 +1,14 @@
 #!/bin/bash
-PROJECT=ciandt-dev-6
-LOCATION=us-central1
-AGENT_GATEWAY_NAME=agent-gateway
+set -e
+
+PROJECT=$1
+LOCATION=$2
+AGENT_GATEWAY_NAME=$3
+
+if [ -z "$PROJECT" ] || [ -z "$LOCATION" ] || [ -z "$AGENT_GATEWAY_NAME" ]; then
+  echo "Usage: ./patch_gateway.sh <PROJECT_ID> <LOCATION> <AGENT_GATEWAY_NAME>"
+  exit 1
+fi
 
 PROJECT_NUMBER=`gcloud projects describe $PROJECT --format="value(projectNumber)"`
 TOKEN=`gcloud auth print-access-token`
@@ -16,3 +23,4 @@ curl -s -X PATCH \
     \"networkConfig\": null,
     \"etag\": \"${ETAG}\"
   }" | jq .
+

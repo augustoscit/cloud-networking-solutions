@@ -414,11 +414,16 @@ The safe destroy order is:
 # 1. Delete the Reasoning Engine first (avoids the drain-gate timeout)
 #    Go to: Vertex AI > Agent Engine > select the engine > Delete
 
-# 2. Destroy all Terraform-managed resources
+# 2. Unbind and delete the AgentConnectivityTemplate
+export AGENT_GATEWAY_NAME=$(cd terraform && terraform output -raw agent_gateway_name)
+./unbind_connectivity_template.sh "${PROJECT_ID}" "${REGION}" "${AGENT_GATEWAY_NAME}"
+./delete_connectivity_template.sh "${PROJECT_ID}" "${REGION}" "cuj2-template"
+
+# 3. Destroy all Terraform-managed resources
 cd terraform
 terraform destroy
 
-# 3. (Optional) Delete the state bucket
+# 4. (Optional) Delete the state bucket
 gcloud storage rm -r "gs://${PROJECT_ID}-tfstate"
 ```
 

@@ -12,18 +12,3 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-try:
-    from vertexai.agent_engines.templates import adk as _adk_module
-
-    _adk_module._warn_if_telemetry_api_disabled = lambda: None
-
-    def _safe_project_id(self):
-        import os
-        return (
-            self._tmpl_attrs.get("project")
-            or os.environ.get("GOOGLE_CLOUD_PROJECT")
-        )
-
-    _adk_module.AdkApp.project_id = _safe_project_id
-except Exception:
-    pass
