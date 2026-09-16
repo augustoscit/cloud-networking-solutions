@@ -28,9 +28,7 @@
 #    RE container).  It calls us-central1-aiplatform.googleapis.com via
 #    aiohttp.  The RE container's internal DNS resolver returns a DirectPath
 #    IP (240.x.x.x) for that regional endpoint; those IPs are not routable
-#    from the customer VPC, so the connection fails with ENETUNREACH (or,
-#    after the getaddrinfo patch redirects to 199.36.153.8, with a TLS
-#    error because private.googleapis.com does not support that endpoint).
+#    from the customer VPC, so the connection fails with ENETUNREACH.
 #    Fix: pass session_service_builder=InMemorySessionService so set_up()
 #    never instantiates VertexAiSessionService.  Sessions are in-memory per
 #    worker — sufficient for a demo where session persistence across RE

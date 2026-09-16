@@ -336,10 +336,11 @@ accept connections from within Google's infrastructure — accessing them from a
 public IP causes `SSLEOFError: UNEXPECTED_EOF_WHILE_READING`, which surfaces
 as a `UserCodeControlPlaneError` and prevents the Reasoning Engine from starting.
 
-This demo addresses the issue with four complementary measures:
+This demo addresses the issue natively using the `AgentConnectivityTemplate` and four complementary measures:
 
+0. **`AgentConnectivityTemplate` (VPC_EGRESS_MODE_ALL_TRAFFIC)** — By binding this template, ALL traffic (including DNS requests) from the Reasoning Engine container is forced into the customer VPC. This natively delegates DNS resolution to the VPC's Cloud DNS, eliminating the need for Python-level socket intercepts.
 1. **`GOOGLE_API_USE_MTLS_ENDPOINT = "never"`** — set as an env var on the
-   Reasoning Engine. This is the primary fix: it forces the Vertex AI SDK to
+   Reasoning Engine. This forces the Vertex AI SDK to
    use `*.googleapis.com` (standard HTTPS) instead of `*.mtls.googleapis.com`
    (Google-internal mTLS, not accessible from customer VPCs even via PGA).
 2. `private_ip_google_access = true` on the Agent Gateway subnet — enables

@@ -122,13 +122,14 @@ resource "google_network_services_agent_gateway" "this" {
 
   registries = [local.registry_uri]
 
-  network_config {
-    egress {
-      network_attachment = google_compute_network_attachment.agent_gateway.id
-    }
-    # dns_peering_config omitted — MCP server at *.run.app resolves via public
-    # DNS. No private DNS peering required for this demo.
-  }
+  # network_config cannot be set when agentConnectivityTemplate is used.
+  # Since terraform provider doesn't support agentConnectivityTemplate yet,
+  # it is created and bound via bash scripts (create_connectivity_template.sh and bind_connectivity_template.sh).
+  # network_config {
+  #   egress {
+  #     network_attachment = google_compute_network_attachment.agent_gateway.id
+  #   }
+  # }
 }
 
 # Allow the Agent Gateway control plane to stabilize before dependent resources
