@@ -29,18 +29,21 @@ The demo has **two distinct egress paths** from the Reasoning Engine:
 │                                                                      │
 │   Reasoning Engine (Agent Runtime)                                   │
 │     └─ agent_gateway_config bound → Agent Gateway (AGENT_TO_ANYWHERE)│
+│                                      └─ AgentConnectivityTemplate    │
+│                                         (VPC_EGRESS_MODE_ALL_TRAFFIC)│
 └──────────────────────────────────────────────────────────────────────┘
                               │ PSC-Interface network attachment
+                              │ (All traffic including DNS is forwarded)
                               ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Customer VPC                                                        │
 │                                                                      │
-│   [Agent Gateway subnet 10.20.0.0/26]  (Private Google Access ON)   │
+│   [Agent Gateway subnet 10.20.0.0/26]  (Private Google Access ON)    │
 │          │                                                           │
-│    DNS?  │                                                           │
 │   ┌──────┴──────────────────┐                                        │
+│   │ VPC Cloud DNS           │                                        │
 │   │                         │                                        │
-│   │ *.googleapis.com        │ all other traffic                      │
+│   │ *.googleapis.com        │ all other traffic (*.run.app, etc.)    │
 │   │ → DNS: 199.36.153.8/30  │ → DNS: public IP                       │
 │   │                         │                                        │
 │   │ PBR 1500: bypass SWP    │ PBR 2000: redirect to SWP              │
@@ -62,11 +65,12 @@ The demo has **two distinct egress paths** from the Reasoning Engine:
                                 (sees the static NAT IP as source)
 ```
 
-> **Why two paths?** When a Reasoning Engine is bound to an Agent Gateway, ALL
-> its outbound traffic enters the customer VPC via PSC-I. Internal Google API
+> **Why two paths?** When a Reasoning Engine is bound to an Agent Gateway with an
+> `AgentConnectivityTemplate` using `VPC_EGRESS_MODE_ALL_TRAFFIC`, ALL its outbound
+> traffic (including DNS requests) natively enters the customer VPC via PSC-I. Internal Google API
 > endpoints (`*.mtls.googleapis.com`, Vertex AI, Cloud Trace, etc.) can only
 > be reached from within Google's infrastructure — routing them through Cloud NAT
-> (a public IP) causes SSL handshake failures. The DNS override + PBR bypass
+> (a public IP) causes SSL handshake failures. The DNS override within the VPC + PBR bypass
 > routes Google API traffic via **Private Google Access** (internal, no NAT),
 > while all other internet traffic (the MCP server) still goes through the
 > SWP → Cloud NAT path where the static IP is enforced.
@@ -79,8 +83,9 @@ The demo has **two distinct egress paths** from the Reasoning Engine:
 | **Agent Gateway binding** | `agent_gateway_config.agent_to_anywhere_config.agent_gateway` routes ALL engine egress through the customer VPC | same resource, `agent_gateway_config` block |
 | **PSC-Interface** | Dedicated network attachment connecting Agent Runtime to the customer VPC | `google_compute_network_attachment` in `modules/agent-gateway/main.tf` |
 | **Agent Gateway** | `AGENT_TO_ANYWHERE` gateway terminates PSC-I and injects traffic into the Agent Gateway subnet | `google_network_services_agent_gateway` in `modules/agent-gateway/main.tf` |
+| **Agent Connectivity Template** | Forces all traffic (including DNS) from the Reasoning Engine to exit through the VPC via `ALL_TRAFFIC` mode | API scripts triggered by `terraform_data` in `modules/agent-gateway/main.tf` |
 | **Private Google Access** | Enabled on the Agent Gateway subnet so Google API traffic can exit internally without NAT | `private_ip_google_access = true` on `google_compute_subnetwork.agent_gateway` in `modules/networking/main.tf` |
-| **DNS override (googleapis)** | Private Cloud DNS zones redirect `*.googleapis.com` and `*.mtls.googleapis.com` to the `private.googleapis.com` VIP (`199.36.153.8/30`) | `google_dns_managed_zone.googleapis_private` + `.mtls_googleapis_private` in `modules/networking/main.tf` |
+| **DNS override (googleapis)** | Private Cloud DNS zones natively intercept and redirect `*.googleapis.com` and `*.mtls.googleapis.com` to the `private.googleapis.com` VIP (`199.36.153.8/30`) | `google_dns_managed_zone.googleapis_private` + `.mtls_googleapis_private` in `modules/networking/main.tf` |
 | **Policy-Based Route (googleapis bypass)** | Priority 1500 — lets traffic destined for `199.36.153.8/30` and `199.36.153.4/30` take the default route (Private Google Access), bypassing the SWP | `google_network_connectivity_policy_based_route.googleapis_bypass` + `.googleapis_restricted_bypass` in `modules/secure-web-proxy/main.tf` |
 | **Policy-Based Route (forced SWP)** | Priority 2000 — redirects all remaining Agent Gateway subnet egress (src `10.20.0.0/26`, dst `0.0.0.0/0`) to the SWP gateway IP | `google_network_connectivity_policy_based_route.agw_to_swp` in `modules/secure-web-proxy/main.tf` |
 | **Policy-Based Route (anti-loop)** | Priority 1000 — prevents SWP's own proxy-originated connections from looping back through the SWP | `google_network_connectivity_policy_based_route.swp_anti_loop` in `modules/secure-web-proxy/main.tf` |
