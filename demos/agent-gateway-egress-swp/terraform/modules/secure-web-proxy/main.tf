@@ -81,7 +81,7 @@ resource "google_compute_subnetwork" "swp_proxy" {
 # Delay destruction of the proxy-only subnet to give the SWP gateway time to fully release it.
 resource "time_sleep" "wait_swp_proxy_subnet_release" {
   depends_on       = [google_compute_subnetwork.swp_proxy]
-  destroy_duration = "60s"
+  destroy_duration = "180s"
 }
 
 # Gateway security policy — container for the security rules.

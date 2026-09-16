@@ -76,7 +76,7 @@ locals {
 
   mcp_build_command = {
     for k in keys(local.mcp_source_dir) : k =>
-    "gcloud builds submit '${local.mcp_source_dir[k]}' --tag '${local.mcp_image_uri[k]}' --region '${var.region}' --gcs-source-staging-dir 'gs://${google_storage_bucket.cloudbuild.name}/source'"
+    "gcloud builds submit '${local.mcp_source_dir[k]}' --project '${var.project_id}' --tag '${local.mcp_image_uri[k]}' --region '${var.region}' --gcs-source-staging-dir 'gs://${google_storage_bucket.cloudbuild.name}/source'"
   }
 }
 

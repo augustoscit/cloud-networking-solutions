@@ -390,6 +390,21 @@ The safe destroy order is:
 1. Delete the Reasoning Engine from the GCP Console (Vertex AI > Agent Engine).
 2. Run `terraform destroy`.
 
+### Network Attachment with connected endpoints cannot be deleted
+
+If `terraform destroy` fails with the error `Network Attachment with connected endpoints cannot be deleted`, it means the `AgentConnectivityTemplate` is still bound to the Agent Gateway or still exists in the project. This can happen if an earlier `terraform apply` failed midway and the automated teardown provisioners were not registered.
+
+To fix this, manually run the unbind and delete scripts from the root directory before retrying `terraform destroy`:
+
+```bash
+export PROJECT_ID=$(gcloud config get-value project)
+export REGION=us-central1
+export AGENT_GATEWAY_NAME=$(cd terraform && terraform output -raw agent_gateway_id | awk -F/ '{print $NF}')
+
+./unbind_connectivity_template.sh "${PROJECT_ID}" "${REGION}" "${AGENT_GATEWAY_NAME}"
+./delete_connectivity_template.sh "${PROJECT_ID}" "${REGION}" "cuj2-template"
+```
+
 ---
 
 ## Cleanup
