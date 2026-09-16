@@ -14,25 +14,13 @@ fi
 TOKEN=$(gcloud auth print-access-token)
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
 
-echo "Clearing networkConfig from AgentGateway ${AGENT_GATEWAY_NAME} before binding template..."
+echo "Binding AgentConnectivityTemplate ${TEMPLATE_NAME} and clearing networkConfig on AgentGateway ${AGENT_GATEWAY_NAME}..."
 ETAG=$(curl -s -H "Authorization: Bearer ${TOKEN}" "https://networkservices.googleapis.com/v1/projects/${PROJECT_NUMBER}/locations/${LOCATION}/agentGateways/${AGENT_GATEWAY_NAME}" | jq -r .etag)
 
 curl -s -X PATCH \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  "https://networkservices.googleapis.com/v1/projects/${PROJECT_NUMBER}/locations/${LOCATION}/agentGateways/${AGENT_GATEWAY_NAME}?updateMask=networkConfig" \
-  -d "{
-    \"networkConfig\": null,
-    \"etag\": \"${ETAG}\"
-  }" > /dev/null
-
-echo "Binding AgentConnectivityTemplate ${TEMPLATE_NAME} to AgentGateway ${AGENT_GATEWAY_NAME}..."
-ETAG=$(curl -s -H "Authorization: Bearer ${TOKEN}" "https://networkservices.googleapis.com/v1/projects/${PROJECT_NUMBER}/locations/${LOCATION}/agentGateways/${AGENT_GATEWAY_NAME}" | jq -r .etag)
-
-curl -s -X PATCH \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  "https://networkservices.googleapis.com/v1/projects/${PROJECT_NUMBER}/locations/${LOCATION}/agentGateways/${AGENT_GATEWAY_NAME}?updateMask=agentConnectivityTemplate" \
+  "https://networkservices.googleapis.com/v1/projects/${PROJECT_NUMBER}/locations/${LOCATION}/agentGateways/${AGENT_GATEWAY_NAME}?updateMask=agentConnectivityTemplate,networkConfig" \
   -d "{
     \"agentConnectivityTemplate\": \"projects/${PROJECT_NUMBER}/locations/${LOCATION}/agentConnectivityTemplates/${TEMPLATE_NAME}\",
     \"etag\": \"${ETAG}\"

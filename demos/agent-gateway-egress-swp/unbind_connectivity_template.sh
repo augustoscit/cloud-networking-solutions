@@ -22,7 +22,6 @@ curl -s -X PATCH \
   -H "Content-Type: application/json" \
   "https://networkservices.googleapis.com/v1/projects/${PROJECT_NUMBER}/locations/${LOCATION}/agentGateways/${AGENT_GATEWAY_NAME}?updateMask=agentConnectivityTemplate" \
   -d "{
-    \"agentConnectivityTemplate\": null,
     \"etag\": \"${ETAG}\"
   }"
 

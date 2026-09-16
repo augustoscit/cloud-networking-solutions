@@ -78,6 +78,12 @@ resource "google_compute_subnetwork" "swp_proxy" {
   role          = "ACTIVE"
 }
 
+# Delay destruction of the proxy-only subnet to give the SWP gateway time to fully release it.
+resource "time_sleep" "wait_swp_proxy_subnet_release" {
+  depends_on       = [google_compute_subnetwork.swp_proxy]
+  destroy_duration = "60s"
+}
+
 # Gateway security policy — container for the security rules.
 resource "google_network_security_gateway_security_policy" "swp" {
   provider    = google-beta
@@ -130,7 +136,10 @@ resource "google_network_services_gateway" "swp" {
   # destroyed, preventing orphaned routers accumulating across re-applies.
   delete_swg_autogen_router_on_destroy = true
 
-  depends_on = [google_network_security_gateway_security_policy_rule.allow_all]
+  depends_on = [
+    google_network_security_gateway_security_policy_rule.allow_all,
+    time_sleep.wait_swp_proxy_subnet_release
+  ]
 }
 
 # Policy-Based Route 1 — Anti-loop.
