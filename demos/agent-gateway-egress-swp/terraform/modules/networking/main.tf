@@ -96,3 +96,45 @@ resource "google_compute_router_nat" "nat_gateway" {
     filter = "ERRORS_ONLY"
   }
 }
+
+# =============================================================================
+# Private Google Access DNS Override
+# Forces all Google API traffic to resolve to the restricted.googleapis.com VIP
+# (199.36.153.4/30). This is required because SWP does not transparently proxy
+# gRPC (used by Reasoning Engine to reach cloudresourcemanager and aiplatform).
+# The SWP module adds a PBR to bypass these IPs, allowing them to use standard
+# Private Google Access via the default route.
+# =============================================================================
+
+resource "google_dns_managed_zone" "googleapis" {
+  name        = "${var.name_prefix}-googleapis"
+  dns_name    = "googleapis.com."
+  description = "PGA override for googleapis.com"
+  project     = var.project_id
+  visibility  = "private"
+
+  private_visibility_config {
+    networks {
+      network_url = module.vpc.self_link
+    }
+  }
+}
+
+resource "google_dns_record_set" "googleapis_cname" {
+  name         = "*.googleapis.com."
+  type         = "CNAME"
+  ttl          = 300
+  managed_zone = google_dns_managed_zone.googleapis.name
+  project      = var.project_id
+  rrdatas      = ["googleapis.com."]
+}
+
+resource "google_dns_record_set" "googleapis_a" {
+  name         = "googleapis.com."
+  type         = "A"
+  ttl          = 300
+  managed_zone = google_dns_managed_zone.googleapis.name
+  project      = var.project_id
+  # We use the restricted VIP so VPC Service Controls (if enabled later) are supported.
+  rrdatas      = ["199.36.153.4", "199.36.153.5", "199.36.153.6", "199.36.153.7"]
+}

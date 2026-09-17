@@ -132,24 +132,12 @@ locals {
       # customer VPCs); this env var uses set_up()'s _telemetry_enabled() path, which
       # does not make that health-check call. See deploy_agent.py for details.
       GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY              = "true"
-      # Prevent google-genai (used by VertexAiSessionService / ADK sessions) from
-      # auto-enabling mTLS. When running in GCE the container has a workload
-      # certificate; google.auth.transport.mtls.should_use_client_cert() detects
-      # it and google-genai rewrites every *.googleapis.com URL to
-      # *.mtls.googleapis.com. Those mTLS endpoints are Google-internal and
-      # unreachable from the customer VPC. Setting this to "false" prevents
-      # should_use_client_cert() from returning True regardless of certs present.
-      GOOGLE_API_USE_CLIENT_CERTIFICATE                       = "false"
-      # Belt-and-suspenders: also tell the older google-api-python-client not to
-      # use mTLS (this was the original fix for telemetry.mtls.googleapis.com).
-      GOOGLE_API_USE_MTLS_ENDPOINT                            = "never"
       # Disable gRPC DirectPath (google-c2p / C2P resolver). When running in GCE,
       # gRPC auto-enables DirectPath, which bypasses DNS and provides Google-internal
       # backend addresses (240.0.0.x IPv4, 2607:f8b0::/32 IPv6). These addresses are
       # unreachable from customer VPCs. Setting GRPC_DNS_RESOLVER=native forces gRPC
       # to use standard DNS resolution (via VPC Cloud DNS, due to dnsPeeringConfig),
-      # resolving googleapis.com to public IPs that are successfully proxied through
-      # SWP and Cloud NAT.
+      # resolving googleapis.com to Private Google Access VIPs which correctly bypass SWP.
       GRPC_DNS_RESOLVER                                       = "native"
     },
     var.mcp_server_url != null ? { BUG_TICKETS_MCP_URL = var.mcp_server_url } : {}

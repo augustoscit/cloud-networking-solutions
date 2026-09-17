@@ -26,11 +26,11 @@ curl -s -X POST \
     \"deploymentModel\": \"CENTRALIZED\",
     \"egressNetworkConfig\": {
       \"networkAttachment\": \"${NETWORK_ATTACHMENT_URI}\",
-      \"vpcEgress\": \"ALL_TRAFFIC\"
-    },
-    \"dnsPeeringConfig\": {
-      \"domain\": \"googleapis.com\",
-      \"targetNetwork\": \"${TARGET_VPC_NETWORK_URI}\"
+      \"vpcEgress\": \"ALL_TRAFFIC\",
+      \"dnsPeeringConfig\": {
+        \"domain\": \"googleapis.com\",
+        \"targetNetwork\": \"${TARGET_VPC_NETWORK_URI}\"
+      }
     }
   }"
 
