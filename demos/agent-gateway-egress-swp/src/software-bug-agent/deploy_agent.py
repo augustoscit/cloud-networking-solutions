@@ -153,14 +153,9 @@ def main() -> None:
 
     from software_bug_agent.agent import root_agent
 
-    # Use SafeAdkApp instead of AdkApp.  SafeAdkApp overrides project_id() so
-    # that set_up() never makes gRPC calls to cloudresourcemanager.googleapis.com.
-    # When the pickle is deserialized in the Reasoning Engine container, Python
-    # imports software_bug_agent.safe_adk (the class's home module), which
-    # guarantees the override is active before set_up() is called.
-    # See software_bug_agent/safe_adk.py for the full rationale.
-    from software_bug_agent.safe_adk import SafeAdkApp
-    app = SafeAdkApp(agent=root_agent)
+    # Use standard AdkApp
+    from vertexai.agent_engines import AdkApp
+    app = AdkApp(agent=root_agent)
 
     description = "Software bug-triage agent for QuantumRoast — demonstrates public-internet egress via SWP + Cloud NAT with static IP (CUJ2)."
 
