@@ -282,6 +282,12 @@ gcloud logging read \
 
 ## Known Caveats and Troubleshooting
 
+### MCP SessionNotFoundError
+
+If you observe `google.adk.errors.session_not_found_error.SessionNotFoundError` in the Agent Engine logs, it means the backend MCP Cloud Run service is load-balancing requests across multiple instances. The Streamable HTTP transport relies on memory state. The terraform `mcp-cloud-run` module enforces `session_affinity = true` to guarantee the `POST` and `GET` requests hit the same instance. Ensure you do not manually disable it.
+
+*Note: If you query Cloud Run logs and see `406 Not Acceptable`, this is typically caused by a manual `curl` or browser request omitting the `Accept: text/event-stream` header. The Agent's Python client correctly sets this header.*
+
 ### One Reasoning Engine per Agent Gateway per region
 
 Agent Gateway currently supports **one bound Reasoning Engine per region per

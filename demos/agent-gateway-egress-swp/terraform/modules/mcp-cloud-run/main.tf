@@ -72,7 +72,8 @@ resource "google_cloud_run_v2_service" "mcp" {
   ] : null
 
   template {
-    service_account = google_service_account.mcp[each.key].email
+    service_account  = google_service_account.mcp[each.key].email
+    session_affinity = true
 
     scaling {
       min_instance_count = each.value.min_instance_count
