@@ -164,47 +164,6 @@ resource "google_network_connectivity_policy_based_route" "swp_anti_loop" {
   next_hop_other_routes = "DEFAULT_ROUTING"
 }
 
-# Policy-Based Route 1b — Private Google Access bypass.
-# Scope: traffic from the Agent Gateway subnet heading to the
-# private.googleapis.com VIP (199.36.153.8/30) or restricted.googleapis.com
-# VIP (199.36.153.4/30). These VIPs carry *.googleapis.com / *.mtls.googleapis.com
-# traffic when the DNS zone override in the networking module is active.
-# Action: exit via the default route (Private Google Access, no NAT) so the
-# Reasoning Engine can reach internal Google API endpoints.
-# Priority 1500 — evaluated after anti-loop (1000) but BEFORE the SWP redirect
-# (2000), so googleapis traffic bypasses the SWP and Cloud NAT entirely.
-resource "google_network_connectivity_policy_based_route" "googleapis_bypass" {
-  project     = var.project_id
-  name        = "${var.name_prefix}-pbr-googleapis-bypass"
-  description = "Bypass SWP for private.googleapis.com VIP — lets internal googleapis.com endpoints skip Cloud NAT"
-  network     = local.network_id
-
-  filter {
-    protocol_version = "IPV4"
-    src_range        = var.agent_gateway_subnet_cidr
-    dest_range       = "199.36.153.8/30"
-  }
-
-  priority              = 1500
-  next_hop_other_routes = "DEFAULT_ROUTING"
-}
-
-resource "google_network_connectivity_policy_based_route" "googleapis_restricted_bypass" {
-  project     = var.project_id
-  name        = "${var.name_prefix}-pbr-googleapis-restricted-bypass"
-  description = "Bypass SWP for restricted.googleapis.com VIP"
-  network     = local.network_id
-
-  filter {
-    protocol_version = "IPV4"
-    src_range        = var.agent_gateway_subnet_cidr
-    dest_range       = "199.36.153.4/30"
-  }
-
-  priority              = 1500
-  next_hop_other_routes = "DEFAULT_ROUTING"
-}
-
 # Policy-Based Route 2 — Forced next-hop through SWP.
 # Scope: traffic sourced FROM the Agent Gateway PSC-I subnet heading to the
 # public internet (0.0.0.0/0). This covers all Agent Runtime egress.

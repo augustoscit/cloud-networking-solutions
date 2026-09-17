@@ -47,11 +47,6 @@ module "vpc" {
 
 # Agent Gateway — dedicated regular subnet that hosts the PSC-I network
 # attachment the agent-gateway module creates.
-# private_ip_google_access = true is required so that the policy-based route
-# exemption for private.googleapis.com (199.36.153.8/30) works: traffic to the
-# private VIP bypasses the SWP and exits via Private Google Access instead of
-# Cloud NAT, allowing the Reasoning Engine to reach internal *.googleapis.com
-# and *.mtls.googleapis.com endpoints (e.g. telemetry.mtls.googleapis.com).
 resource "google_compute_subnetwork" "agent_gateway" {
   count                    = var.enable_agent_gateway ? 1 : 0
   project                  = var.project_id
@@ -60,84 +55,6 @@ resource "google_compute_subnetwork" "agent_gateway" {
   network                  = module.vpc.self_link
   ip_cidr_range            = var.agent_gateway_subnet_cidr
   private_ip_google_access = true
-}
-
-# ---------------------------------------------------------------------------
-# Private Google Access DNS override for googleapis.com
-#
-# When the Agent Gateway PSC-I routes all Reasoning Engine egress through the
-# customer VPC, internal Google API endpoints (e.g. telemetry.mtls.googleapis.com)
-# would normally exit via Cloud NAT (a public IP) — but those endpoints are
-# only reachable from within Google's infrastructure network.
-#
-# Solution: override DNS for *.googleapis.com and *.mtls.googleapis.com so they
-# resolve to the private.googleapis.com VIP (199.36.153.8/30). The secure-web-proxy
-# module adds a high-priority PBR (1500) to bypass the SWP for that VIP, so
-# googleapis.com traffic exits via Private Google Access (internal), while all
-# other internet traffic (MCP server, etc.) still goes through SWP → Cloud NAT.
-# ---------------------------------------------------------------------------
-
-resource "google_dns_managed_zone" "googleapis_private" {
-  count       = var.enable_agent_gateway ? 1 : 0
-  project     = var.project_id
-  name        = "${var.name_prefix}-googleapis-private"
-  dns_name    = "googleapis.com."
-  visibility  = "private"
-  description = "Private DNS override: routes *.googleapis.com to private.googleapis.com VIP so Reasoning Engine API calls bypass Cloud NAT"
-
-  private_visibility_config {
-    networks {
-      network_url = module.vpc.self_link
-    }
-  }
-}
-
-resource "google_dns_record_set" "googleapis_a" {
-  count        = var.enable_agent_gateway ? 1 : 0
-  project      = var.project_id
-  managed_zone = google_dns_managed_zone.googleapis_private[0].name
-  name         = "*.googleapis.com."
-  type         = "A"
-  ttl          = 300
-  rrdatas      = ["199.36.153.8", "199.36.153.9", "199.36.153.10", "199.36.153.11"]
-}
-
-resource "google_dns_record_set" "private_googleapis_a" {
-  count        = var.enable_agent_gateway ? 1 : 0
-  project      = var.project_id
-  managed_zone = google_dns_managed_zone.googleapis_private[0].name
-  name         = "private.googleapis.com."
-  type         = "A"
-  ttl          = 300
-  rrdatas      = ["199.36.153.8", "199.36.153.9", "199.36.153.10", "199.36.153.11"]
-}
-
-# Separate zone for *.mtls.googleapis.com — DNS wildcard for *.googleapis.com
-# does not cover *.something.googleapis.com (two-level subdomain), so we need
-# an explicit child zone for the mtls subdomain.
-resource "google_dns_managed_zone" "mtls_googleapis_private" {
-  count       = var.enable_agent_gateway ? 1 : 0
-  project     = var.project_id
-  name        = "${var.name_prefix}-mtls-googleapis-private"
-  dns_name    = "mtls.googleapis.com."
-  visibility  = "private"
-  description = "Private DNS override: routes *.mtls.googleapis.com to private.googleapis.com VIP"
-
-  private_visibility_config {
-    networks {
-      network_url = module.vpc.self_link
-    }
-  }
-}
-
-resource "google_dns_record_set" "mtls_googleapis_a" {
-  count        = var.enable_agent_gateway ? 1 : 0
-  project      = var.project_id
-  managed_zone = google_dns_managed_zone.mtls_googleapis_private[0].name
-  name         = "*.mtls.googleapis.com."
-  type         = "A"
-  ttl          = 300
-  rrdatas      = ["199.36.153.8", "199.36.153.9", "199.36.153.10", "199.36.153.11"]
 }
 
 # Reserve a static external IP for Cloud NAT. This is the address the MCP

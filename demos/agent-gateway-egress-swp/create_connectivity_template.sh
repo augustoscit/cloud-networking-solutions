@@ -5,10 +5,10 @@ PROJECT_ID=$1
 LOCATION=$2
 TEMPLATE_NAME=$3
 NETWORK_ATTACHMENT_URI=$4
+TARGET_VPC_NETWORK_URI=$5
 
-if [ -z "$PROJECT_ID" ] || [ -z "$LOCATION" ] || [ -z "$TEMPLATE_NAME" ] || [ -z "$NETWORK_ATTACHMENT_URI" ]; then
-  echo "Usage: ./create_connectivity_template.sh <PROJECT_ID> <LOCATION> <TEMPLATE_NAME> <NETWORK_ATTACHMENT_URI>"
-  echo "Example: ./create_connectivity_template.sh my-project us-central1 my-template projects/my-project/regions/us-central1/networkAttachments/my-attachment"
+if [ -z "$PROJECT_ID" ] || [ -z "$LOCATION" ] || [ -z "$TEMPLATE_NAME" ] || [ -z "$NETWORK_ATTACHMENT_URI" ] || [ -z "$TARGET_VPC_NETWORK_URI" ]; then
+  echo "Usage: ./create_connectivity_template.sh <PROJECT_ID> <LOCATION> <TEMPLATE_NAME> <NETWORK_ATTACHMENT_URI> <TARGET_VPC_NETWORK_URI>"
   exit 1
 fi
 
@@ -27,6 +27,10 @@ curl -s -X POST \
     \"egressNetworkConfig\": {
       \"networkAttachment\": \"${NETWORK_ATTACHMENT_URI}\",
       \"vpcEgress\": \"ALL_TRAFFIC\"
+    },
+    \"dnsPeeringConfig\": {
+      \"domain\": \"googleapis.com\",
+      \"targetNetwork\": \"${TARGET_VPC_NETWORK_URI}\"
     }
   }"
 

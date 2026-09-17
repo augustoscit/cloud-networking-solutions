@@ -150,13 +150,14 @@ resource "terraform_data" "agent_connectivity_template" {
     agent_gateway_name    = google_network_services_agent_gateway.this.name
     template_name         = "cuj2-template"
     network_attachment_id = google_compute_network_attachment.agent_gateway.id
+    network_self_link     = var.network_self_link
   }
 
   provisioner "local-exec" {
     when    = create
     command = <<-EOT
       cd ..
-      ./create_connectivity_template.sh "${self.input.project_id}" "${self.input.region}" "${self.input.template_name}" "${self.input.network_attachment_id}"
+      ./create_connectivity_template.sh "${self.input.project_id}" "${self.input.region}" "${self.input.template_name}" "${self.input.network_attachment_id}" "${self.input.network_self_link}"
       ./bind_connectivity_template.sh "${self.input.project_id}" "${self.input.region}" "${self.input.agent_gateway_name}" "${self.input.template_name}"
     EOT
   }
