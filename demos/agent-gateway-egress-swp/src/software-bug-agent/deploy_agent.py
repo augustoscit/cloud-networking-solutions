@@ -185,6 +185,8 @@ def main() -> None:
             "ADK_ENABLE_MCP_GRACEFUL_ERROR_HANDLING": "true",
             "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
             "GOOGLE_API_PREVENT_AGENT_TOKEN_SHARING_FOR_GCP_SERVICES": "false",
+            "GOOGLE_API_USE_CLIENT_CERTIFICATE": "false",
+            "GOOGLE_API_USE_MTLS_ENDPOINT": "never",
             "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
             "OTEL_TRACES_SAMPLER": "parentbased_traceidratio",
             "OTEL_TRACES_SAMPLER_ARG": "1.0",

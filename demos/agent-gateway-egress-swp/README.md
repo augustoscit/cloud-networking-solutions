@@ -44,7 +44,7 @@ The demo has **two distinct egress paths** from the Reasoning Engine:
 │   │ VPC Cloud DNS           │                                        │
 │   │                         │                                        │
 │   │ *.googleapis.com        │ all other traffic (*.run.app, etc.)    │
-│   │ → DNS: 199.36.153.8/30  │ → DNS: public IP                       │
+│   │ → DNS: 199.36.153.4/30  │ → DNS: public IP                       │
 │   │                         │                                        │
 │   │ PBR 1500: bypass SWP    │ PBR 2000: redirect to SWP              │
 │   │ DEFAULT_ROUTING         │ next_hop_ilb_ip = SWP internal IP      │
@@ -85,8 +85,8 @@ The demo has **two distinct egress paths** from the Reasoning Engine:
 | **Agent Gateway** | `AGENT_TO_ANYWHERE` gateway terminates PSC-I and injects traffic into the Agent Gateway subnet | `google_network_services_agent_gateway` in `modules/agent-gateway/main.tf` |
 | **Agent Connectivity Template** | Forces all traffic (including DNS) from the Reasoning Engine to exit through the VPC via `ALL_TRAFFIC` mode | API scripts triggered by `terraform_data` in `modules/agent-gateway/main.tf` |
 | **Private Google Access** | Enabled on the Agent Gateway subnet so Google API traffic can exit internally without NAT | `private_ip_google_access = true` on `google_compute_subnetwork.agent_gateway` in `modules/networking/main.tf` |
-| **DNS override (googleapis)** | Private Cloud DNS zones natively intercept and redirect `*.googleapis.com` and `*.mtls.googleapis.com` to the `private.googleapis.com` VIP (`199.36.153.8/30`) | `google_dns_managed_zone.googleapis_private` + `.mtls_googleapis_private` in `modules/networking/main.tf` |
-| **Policy-Based Route (googleapis bypass)** | Priority 1500 — lets traffic destined for `199.36.153.8/30` and `199.36.153.4/30` take the default route (Private Google Access), bypassing the SWP | `google_network_connectivity_policy_based_route.googleapis_bypass` + `.googleapis_restricted_bypass` in `modules/secure-web-proxy/main.tf` |
+| **DNS override (googleapis)** | Private Cloud DNS zones natively intercept and redirect `*.googleapis.com` to the `restricted.googleapis.com` VIP (`199.36.153.4/30`) | `google_dns_managed_zone.googleapis` in `modules/networking/main.tf` |
+| **Policy-Based Route (googleapis bypass)** | Priority 1500 — lets traffic destined for `199.36.153.4/30` take the default route (Private Google Access), bypassing the SWP | `google_network_connectivity_policy_based_route.googleapis_restricted_bypass` in `modules/secure-web-proxy/main.tf` |
 | **Policy-Based Route (forced SWP)** | Priority 2000 — redirects all remaining Agent Gateway subnet egress (src `10.20.0.0/26`, dst `0.0.0.0/0`) to the SWP gateway IP | `google_network_connectivity_policy_based_route.agw_to_swp` in `modules/secure-web-proxy/main.tf` |
 | **Policy-Based Route (anti-loop)** | Priority 1000 — prevents SWP's own proxy-originated connections from looping back through the SWP | `google_network_connectivity_policy_based_route.swp_anti_loop` in `modules/secure-web-proxy/main.tf` |
 | **Secure Web Proxy** | L7 proxy in `NEXT_HOP_ROUTING_MODE`; applies `ALLOW` security policy; forwards traffic to the default internet route | `google_network_services_gateway` in `modules/secure-web-proxy/main.tf` |
@@ -335,21 +335,18 @@ This demo addresses the issue natively using the `AgentConnectivityTemplate` and
    (Google-internal mTLS, not accessible from customer VPCs even via PGA).
 2. `private_ip_google_access = true` on the Agent Gateway subnet — enables
    Private Google Access so the subnet can reach Google APIs internally.
-3. **Private Cloud DNS zones** — override `*.googleapis.com` and
-   `*.mtls.googleapis.com` to resolve to the `private.googleapis.com` VIP
-   (`199.36.153.8/30`) instead of their public IPs. This ensures that even if
-   the SDK temporarily uses an mTLS variant hostname, traffic is still routed
-   to the private VIP.
-4. **PBRs at priority 1500** — route traffic destined for `199.36.153.8/30`
-   (and `199.36.153.4/30`) via `DEFAULT_ROUTING`, bypassing the SWP. This means
+3. **Private Cloud DNS zones** — override `*.googleapis.com` to resolve to the `restricted.googleapis.com` VIP
+   (`199.36.153.4/30`) instead of their public IPs. This ensures that internal Google API traffic is routed to the restricted VIP.
+4. **PBRs at priority 1500** — route traffic destined for `199.36.153.4/30`
+   via `DEFAULT_ROUTING`, bypassing the SWP. This means
    Google API calls exit via PGA (internal, no NAT), while all other internet
    traffic continues through the SWP → Cloud NAT path.
 
 **Why `GOOGLE_API_USE_MTLS_ENDPOINT = "never"` is necessary**: The
 `*.mtls.googleapis.com` endpoints use Google's internal service-mesh mTLS
 protocol, which is fundamentally different from standard client-side mTLS. Even
-when you point DNS at `private.googleapis.com` (199.36.153.8/30) and route
-via PGA, the `private.googleapis.com` VIP handles standard HTTPS calls — not
+when you point DNS at `restricted.googleapis.com` (199.36.153.4/30) and route
+via PGA, the restricted VIP handles standard HTTPS calls — not
 the internal mTLS protocol. This results in `ConnectionResetError: Connection
 reset by peer` from the VIP. The `GOOGLE_API_USE_MTLS_ENDPOINT = "never"` env
 var prevents the SDK from attempting `*.mtls.googleapis.com` at all.

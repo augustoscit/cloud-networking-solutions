@@ -132,6 +132,12 @@ locals {
       # customer VPCs); this env var uses set_up()'s _telemetry_enabled() path, which
       # does not make that health-check call. See deploy_agent.py for details.
       GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY              = "true"
+      # Prevent google-genai (used by VertexAiSessionService / ADK sessions) from
+      # auto-enabling mTLS.
+      GOOGLE_API_USE_CLIENT_CERTIFICATE                       = "false"
+      # Belt-and-suspenders: also tell the older google-api-python-client not to
+      # use mTLS (this was the original fix for telemetry.mtls.googleapis.com).
+      GOOGLE_API_USE_MTLS_ENDPOINT                            = "never"
       # Disable gRPC DirectPath (google-c2p / C2P resolver). When running in GCE,
       # gRPC auto-enables DirectPath, which bypasses DNS and provides Google-internal
       # backend addresses (240.0.0.x IPv4, 2607:f8b0::/32 IPv6). These addresses are
